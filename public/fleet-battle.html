@@ -1,0 +1,1697 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Fleet Battle - Ultimate Commander</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Special+Elite&display=swap');
+        
+        body, html { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; background-color: #111; font-family: 'Special Elite', cursive; user-select: none; -webkit-user-select: none; cursor: crosshair; }
+        #gameCanvas { position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 1; }
+
+        /* --- UI STYLES --- */
+        .ui-layer { position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 10; pointer-events: none; display: flex; flex-direction: column; justify-content: space-between; padding: 20px; box-sizing: border-box; transition: transform 0.3s; }
+        .steampunk-panel { background-color: #e6ddc5; border: 4px solid #1a1817; box-shadow: 12px 12px 0px rgba(0,0,0,0.8); pointer-events: auto; padding: 15px; color: #1a1817; position: relative; transition: opacity 0.2s; }
+        .steampunk-panel::after { content: ''; position: absolute; top: 4px; left: 4px; right: 4px; bottom: 4px; border: 1px solid rgba(26, 24, 23, 0.4); pointer-events: none; }
+        
+        .btn { background: #f0eadd; color: #1a1817; border: 2px solid #1a1817; padding: 8px 12px; cursor: pointer; text-transform: uppercase; font-size: 0.9rem; font-weight: bold; transition: all 0.1s; display: block; width: 100%; margin-bottom: 8px; text-align: center; box-shadow: 4px 4px 0px rgba(0,0,0,0.8); font-family: 'Special Elite', cursive; }
+        .btn:hover:not(:disabled) { background: #d4c575; transform: translate(2px, 2px); box-shadow: 2px 2px 0px rgba(0,0,0,0.8); }
+        .btn:active:not(:disabled) { transform: translate(4px, 4px); box-shadow: 0px 0px 0px rgba(0,0,0,0.8); }
+        .btn:disabled { background: #ccc; color: #888; border-color: #888; cursor: not-allowed; box-shadow: 4px 4px 0px rgba(0,0,0,0.3); }
+
+        .fluid-bar-container { width: 100%; height: 20px; background: #f4f1eb; border: 2px solid #1a1817; position: relative; overflow: hidden; margin-top: 5px; box-shadow: inset 2px 2px 5px rgba(0,0,0,0.2); }
+        .fluid-bar { height: 100%; transition: width 0.3s cubic-bezier(0.2, 0.8, 0.2, 1); position: relative; }
+        .fluid-bar::after { content: ''; position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: repeating-linear-gradient(45deg, rgba(255,255,255,0.2), rgba(255,255,255,0.2) 10px, transparent 10px, transparent 20px); }
+
+        .text-copper { color: #8b2b2b; }
+        .text-iron { color: #1a1817; font-weight: bold; border-bottom: 2px solid #1a1817; margin-bottom: 10px; padding-bottom: 2px; }
+
+        .menu-overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; z-index: 50; pointer-events: auto; background: radial-gradient(circle at center, transparent 0%, rgba(20,20,20,0.8) 100%); backdrop-filter: blur(2px); }
+        .menu-screen { display: none; } .menu-screen.active { display: block; }
+        .title-text { font-size: 4rem; color: #1a1817; text-shadow: 6px 6px 0px #8b2b2b; text-align: center; margin-bottom: 30px; letter-spacing: 5px; font-weight: 900; }
+        #game-ui { display: none; } #pause-ui { display: none; background: rgba(0,0,0,0.6); }
+
+        .pressure-gauge { width: 80px; height: 80px; border-radius: 50%; background: conic-gradient(from 180deg, #1a1817, #5a5a5a, #1a1817); border: 4px solid #1a1817; position: absolute; top: -40px; right: -20px; box-shadow: 8px 8px 0px rgba(0,0,0,0.8); display: flex; align-items: center; justify-content: center; }
+        .gauge-inner { width: 60px; height: 60px; border-radius: 50%; background: #e6ddc5; box-shadow: inset 0 2px 5px rgba(0,0,0,0.5); position: relative; }
+        .gauge-needle { position: absolute; bottom: 50%; left: 50%; width: 4px; height: 25px; background: #8b2b2b; transform-origin: bottom center; transform: translateX(-50%) rotate(-120deg); transition: transform 0.2s; }
+
+        select, input[type="text"] { width: 100%; background: #f0eadd; border: 2px solid #1a1817; padding: 8px; margin-bottom: 10px; font-family: 'Special Elite', cursive; font-weight: bold; outline: none; box-shadow: inset 2px 2px 0px rgba(0,0,0,0.2); }
+        input[type=range] { -webkit-appearance: none; width: 100%; background: transparent; }
+        input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; height: 16px; width: 16px; background: #1a1817; cursor: pointer; margin-top: -6px; }
+        input[type=range]::-webkit-slider-runnable-track { width: 100%; height: 4px; cursor: pointer; background: #8b2b2b; border: 1px solid #1a1817; }
+
+        #minimap-container { position: absolute; bottom: 20px; right: 20px; width: 200px; height: 200px; background: rgba(230,221,197, 0.85); border: 4px solid #1a1817; box-shadow: 8px 8px 0px rgba(0,0,0,0.8); pointer-events: auto; }
+        #btn-pause { position: absolute; top: 20px; right: 20px; width: auto; pointer-events: auto;}
+        
+        .notification { position: absolute; top: 80px; left: 50%; transform: translateX(-50%); background: #1a1817; color: #f4f1eb; padding: 10px 20px; border: 2px solid #d4c575; font-weight: bold; z-index: 100; transition: opacity 0.5s; opacity: 0; pointer-events: none; text-transform: uppercase; box-shadow: 0 5px 15px rgba(0,0,0,0.5); }
+        
+        /* Layout modifications */
+        .layout-reversed { flex-direction: row-reverse !important; }
+        .cinematic-banner { position: absolute; top: 40%; left: 0; width: 100%; background: #1a1817; color: #e6ddc5; text-align: center; padding: 40px 0; font-size: 5rem; letter-spacing: 15px; font-weight: 900; z-index: 100; border-top: 10px solid #8b2b2b; border-bottom: 10px solid #8b2b2b; opacity: 0; transform: scaleY(0); transition: all 1s cubic-bezier(0.175, 0.885, 0.32, 1.275); text-shadow: 5px 5px 0 #000; }
+        .cinematic-banner.show { opacity: 1; transform: scaleY(1); }
+
+    </style>
+</head>
+<body>
+
+    <canvas id="gameCanvas"></canvas>
+    
+    <div id="game-notification" class="notification">Objective Secured</div>
+    <div id="cinematic-banner" class="cinematic-banner">VICTORY</div>
+
+    <!-- MENUS OVERLAY -->
+    <div id="menus-container" class="menu-overlay">
+        
+        <!-- MAIN MENU -->
+        <div id="menu-main" class="steampunk-panel w-[400px] p-8 menu-screen active">
+            <h1 class="title-text">FLEET<br>BATTLE</h1>
+            <div class="space-y-4">
+                <button id="btn-continue" class="btn py-4 text-xl" style="display:none;" onclick="switchMenu('none'); resumeGame();">Continue Campaign</button>
+                <button class="btn py-3" onclick="switchMenu('skirmish')">Skirmish Mode</button>
+                <button class="btn py-3" onclick="switchMenu('customize')">Fleet Dockyard</button>
+                <button class="btn py-3" onclick="switchMenu('profile')">Service Record</button>
+                <button class="btn py-3" onclick="switchMenu('settings')">Settings</button>
+            </div>
+        </div>
+
+        <!-- SETTINGS -->
+        <div id="menu-settings" class="steampunk-panel w-[400px] p-8 menu-screen">
+            <div class="text-iron text-xl text-center mb-4">SYSTEM SETTINGS</div>
+            
+            <label class="font-bold text-sm">Visual Theme (World & Ships)</label>
+            <select id="cfg-theme" onchange="applySettings()">
+                <option value="retro">Retro Poster (Classic)</option>
+                <option value="oasis">Corrupted Oasis (Neon Graphic)</option>
+            </select>
+
+            <label class="font-bold text-sm mt-4 block">UI Layout</label>
+            <select id="cfg-layout" onchange="applySettings()">
+                <option value="default">Default</option>
+                <option value="reversed">Reversed (Minimap Left)</option>
+            </select>
+            <div class="flex space-x-2 mt-8">
+                <button class="btn py-3 bg-gray-400" onclick="switchMenu('main')">Back</button>
+            </div>
+        </div>
+
+        <!-- SKIRMISH SETUP -->
+        <div id="menu-skirmish" class="steampunk-panel w-[600px] p-8 menu-screen">
+            <div class="text-iron text-xl text-center mb-4">SKIRMISH PARAMETERS</div>
+            <div class="flex gap-4">
+                <div class="flex-1">
+                    <label class="font-bold text-sm">Map Size</label>
+                    <select id="cfg-mapsize">
+                        <option value="3000">Small (Sector Alpha)</option>
+                        <option value="5000" selected>Medium (Standard)</option>
+                        <option value="7000">Large (Deep Space)</option>
+                    </select>
+
+                    <label class="font-bold text-sm">Enemy Fleets</label>
+                    <select id="cfg-enemies">
+                        <option value="1" selected>1 (Duel)</option>
+                        <option value="2">2 (Ambush)</option>
+                        <option value="3">3 (Warzone)</option>
+                    </select>
+
+                    <label class="font-bold text-sm">Enemy Commander</label>
+                    <select id="cfg-enemy-ai">
+                        <option value="Balanced">Balanced (Standard AI)</option>
+                        <option value="Overwhelmer">The Overwhelmer (Swarm Tactics)</option>
+                        <option value="Hunter">The Hunter (Targets Weakness)</option>
+                        <option value="Turtle">The Turtle (Defensive Fortification)</option>
+                    </select>
+
+                    <label class="font-bold text-sm">AI Difficulty</label>
+                    <select id="cfg-difficulty">
+                        <option value="0.8">Easy</option>
+                        <option value="1.0" selected>Standard</option>
+                        <option value="1.5">Advanced</option>
+                    </select>
+                </div>
+                <div class="flex-1">
+                    <div class="text-iron text-sm mb-2 border-none">Fleet Composition (<span id="fleet-points">0</span>/200 Pts)</div>
+                    <div id="fleet-builder" class="space-y-1 h-48 overflow-y-auto pr-2">
+                        <!-- Populated by JS -->
+                    </div>
+                </div>
+            </div>
+            
+            <div class="flex items-center mb-6 mt-2">
+                <input type="checkbox" id="cfg-hazards" checked class="mr-2 w-5 h-5">
+                <label class="font-bold text-sm">Environmental Hazards</label>
+            </div>
+
+            <div class="flex space-x-2 mt-6">
+                <button class="btn py-3 bg-gray-400 w-1/3" onclick="switchMenu('main')">Back</button>
+                <button class="btn py-3 w-2/3" style="background: #d4c575;" id="btn-launch-skirmish" onclick="launchSkirmish()">Launch Fleet</button>
+            </div>
+        </div>
+
+        <!-- FLEET CUSTOMIZATION -->
+        <div id="menu-customize" class="steampunk-panel w-[500px] p-8 menu-screen">
+            <div class="text-iron text-xl text-center mb-4">DOCKYARD CUSTOMIZATION</div>
+            <label class="font-bold text-sm">Fleet Designation</label>
+            <input type="text" id="cust-name" value="Allied Steam Carrier">
+            <div class="flex gap-4">
+                <div class="flex-1">
+                    <label class="font-bold text-sm">Hull Accent Color</label>
+                    <select id="cust-color">
+                        <option value="#008080">Teal</option>
+                        <option value="#ff007f">Hot Pink</option>
+                        <option value="#2b4c8b">Navy Blue</option>
+                        <option value="#b8860b">Brass Gold</option>
+                        <option value="#ccff00">Neon Lime</option>
+                    </select>
+                </div>
+                <div class="flex-1">
+                    <label class="font-bold text-sm">Commander Specialization</label>
+                    <select id="cust-commander">
+                        <option value="Tactical">Tactical (Radar+, Flank Dmg)</option>
+                        <option value="Offensive">Offensive (Dmg+, Fast Build)</option>
+                        <option value="Defensive">Defensive (Shields+, Healing)</option>
+                    </select>
+                </div>
+            </div>
+            <div class="flex space-x-2 mt-6">
+                <button class="btn py-3 bg-gray-400" onclick="switchMenu('main')">Discard</button>
+                <button class="btn py-3" style="background: #d4c575;" onclick="saveCustomization()">Save Changes</button>
+            </div>
+        </div>
+
+        <!-- COMMANDER PROFILE -->
+        <div id="menu-profile" class="steampunk-panel w-[500px] p-8 menu-screen">
+            <div class="text-iron text-xl text-center mb-4">SERVICE RECORD</div>
+            <div class="text-center mb-4 border-b-2 border-black pb-2">
+                <div class="text-sm font-bold text-gray-600">Current Rank</div>
+                <div id="prof-rank" class="text-2xl text-copper font-black tracking-widest">SCRAP CAPTAIN</div>
+            </div>
+            <div class="space-y-2 font-bold mb-4">
+                <div class="flex justify-between"><span>Total Battles:</span> <span id="prof-battles">0</span></div>
+                <div class="flex justify-between"><span>Victories:</span> <span id="prof-wins" class="text-green-700">0</span></div>
+                <div class="flex justify-between"><span>Enemy Carriers Destroyed:</span> <span id="prof-ms">0</span></div>
+                <div class="flex justify-between"><span>Ships Lost:</span> <span id="prof-lost" class="text-red-700">0</span></div>
+            </div>
+            <div class="text-iron text-lg mt-4 border-t-2 border-black pt-2">ACHIEVEMENTS</div>
+            <div id="achievement-list" class="space-y-1 text-sm text-gray-600 mb-4 h-24 overflow-y-auto">
+                <!-- populated by JS -->
+            </div>
+            <button class="btn py-3 mt-2" onclick="switchMenu('main')">Return to Command</button>
+        </div>
+        
+        <!-- AFTER ACTION REPORT -->
+        <div id="menu-aar" class="steampunk-panel w-[500px] p-8 menu-screen">
+            <div class="text-iron text-xl text-center mb-4" id="aar-title">AFTER ACTION REPORT</div>
+            <div class="space-y-2 font-bold text-sm mb-4">
+                <div class="flex justify-between"><span>Duration:</span> <span id="aar-time">0:00</span></div>
+                <div class="flex justify-between"><span>Enemy Ships Destroyed:</span> <span id="aar-kills" class="text-green-700">0</span></div>
+                <div class="flex justify-between"><span>Allied Ships Lost:</span> <span id="aar-lost" class="text-red-700">0</span></div>
+                <div class="flex justify-between border-t border-black mt-2 pt-2"><span>XP Earned:</span> <span id="aar-xp" class="text-copper">0</span></div>
+            </div>
+            <div class="flex space-x-2 mt-6">
+                <button class="btn py-3 w-1/2" onclick="launchSkirmish()">Restart Battle</button>
+                <button class="btn py-3 w-1/2" style="background: #d4c575;" onclick="switchMenu('main')">Main Menu</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- GAME UI HUD -->
+    <div id="game-ui" class="ui-layer">
+        <button id="btn-pause" class="btn px-6 shadow-none" onclick="togglePause()">|| PAUSE</button>
+        
+        <!-- Dynamic Condition Alert -->
+        <div id="hud-condition" class="absolute top-20 right-20 text-right font-bold text-red-800 uppercase tracking-widest text-sm opacity-80 ui-fade-target"></div>
+
+        <div class="w-full flex justify-center mt-2">
+            <div class="steampunk-panel text-center w-96 ui-fade-target">
+                <div class="text-iron tracking-widest text-lg text-copper">AXIS COMMAND</div>
+                <div class="fluid-bar-container"><div id="enemy-ms-hp" class="fluid-bar" style="background: #8b2b2b; width: 100%;"></div></div>
+            </div>
+        </div>
+
+        <div id="minimap-container" class="ui-fade-target">
+            <canvas id="minimapCanvas" width="200" height="200"></canvas>
+        </div>
+
+        <div id="hud-middle" class="flex justify-between flex-1 mt-4 mb-4 relative pointer-events-none">
+            
+            <div class="steampunk-panel w-72 h-fit max-h-full overflow-y-auto ui-fade-target" style="pointer-events: auto;">
+                <div class="text-iron text-lg">FLEET OVERVIEW</div>
+                <div id="fleet-list" class="text-sm space-y-2 font-bold mb-4 h-40 overflow-y-auto pr-2 border border-black p-1 bg-white bg-opacity-10"></div>
+                <div class="mt-2">
+                    <button class="btn py-1" onclick="commandSelected('defend')">Defend Carrier</button>
+                    <button class="btn py-1" onclick="commandSelected('assault')">Full Offensive</button>
+                </div>
+            </div>
+
+            <div class="steampunk-panel w-72 h-fit relative ui-fade-target" style="pointer-events: auto; margin-right: 220px;">
+                <div class="pressure-gauge"><div class="gauge-inner"><div id="energy-needle" class="gauge-needle"></div></div></div>
+                <div class="text-iron text-lg pr-12">SYSTEM POWER</div>
+                <div class="text-right text-xs mb-4 font-bold text-copper"><span id="energy-text">0</span> KW / 100</div>
+                <div class="text-iron text-lg mt-2 border-t-2 border-black pt-2">TACTICAL ASSETS</div>
+                <div class="mb-2 mt-2"><button id="btn-abil-1" class="btn" onclick="useAbility(1)"></button></div>
+                <div class="mb-2"><button id="btn-abil-2" class="btn" onclick="useAbility(2)"></button></div>
+                <div class="mb-2"><button id="btn-abil-3" class="btn" onclick="useAbility(3)"></button></div>
+                
+                <div class="text-iron text-lg mt-2 border-t-2 border-black pt-2">REINFORCEMENTS</div>
+                <div class="mb-2 mt-2"><button id="btn-spawn-fleet" class="btn bg-gray-200" onclick="useAbility(4)">Construct Wing (60 KW)</button></div>
+            </div>
+        </div>
+
+        <div class="w-full flex justify-center mb-2">
+            <div class="steampunk-panel text-center w-96 ui-fade-target">
+                <div id="hud-fleet-name" class="text-iron tracking-widest text-lg" style="color: #008080;">ALLIED STEAM CARRIER</div>
+                <div class="fluid-bar-container"><div id="player-ms-hp" class="fluid-bar" style="background: #008080; width: 100%;"></div></div>
+            </div>
+        </div>
+    </div>
+
+    <div id="pause-ui" class="menu-overlay">
+        <div class="steampunk-panel w-96 p-8">
+            <h1 class="title-text mb-2">PAUSED</h1>
+            <div class="space-y-4 mt-8">
+                <button class="btn py-4 text-xl" onclick="togglePause()">Resume Battle</button>
+                <button class="btn py-3 text-red-900" onclick="endGame(false, true)">Concede Skirmish</button>
+                <button class="btn py-3" onclick="saveGame(); switchMenu('main');">Save & Exit</button>
+            </div>
+        </div>
+    </div>
+
+<script>
+/**
+ * FLEET BATTLE - THE DEFINITIVE RTS EDITION
+ */
+
+// --- DATA & CONFIG ---
+const SHIP_CLASSES = {
+    'Frigate': { cost: 15, hp: 100, speed: 5.5, maxForce: 0.3, range: 250, dmg: 10, fireRate: 35, role: 'Flanker', desc: 'Fast, flanks enemies.' },
+    'Destroyer': { cost: 25, hp: 180, speed: 4.0, maxForce: 0.2, range: 350, dmg: 18, fireRate: 45, role: 'Aggressor', desc: 'Frontline bruiser.' },
+    'Siege': { cost: 40, hp: 250, speed: 2.5, maxForce: 0.1, range: 550, dmg: 50, fireRate: 100, role: 'Aggressor', desc: 'Slow, long range, high dmg.' },
+    'Support': { cost: 30, hp: 140, speed: 3.5, maxForce: 0.2, range: 200, dmg: 5, fireRate: 60, role: 'Guardian', heal: true, desc: 'Repairs nearby allies.' },
+    'Interceptor': { cost: 20, hp: 120, speed: 6.5, maxForce: 0.4, range: 200, dmg: 12, fireRate: 20, role: 'Hunter', desc: 'Hunts weak targets.' }
+};
+
+const CONDITIONS = [
+    { id: 'None', name: 'Clear Skies', desc: 'Standard operating environment.' },
+    { id: 'ScrapStorm', name: 'Scrap Storm', desc: 'Hull damage taken randomly over time.' },
+    { id: 'SolarFlare', name: 'Solar Flare', desc: 'Radar ranges halved. Fog of war thickens.' },
+    { id: 'Overcharge', name: 'Overcharged Core', desc: 'All weapons deal 50% more damage.' }
+];
+
+let profileData = {
+    wins: 0, battles: 0, msDestroyed: 0, shipsLost: 0, xp: 0,
+    fleetName: 'ALLIED STEAM CARRIER', colorAccent: '#008080',
+    commanderTree: 'Tactical', layout: 'default', theme: 'retro',
+    achievements: { timeWin: false, noLoss: false, lowHpWin: false },
+    fleetBuild: { 'Frigate': 4, 'Destroyer': 2, 'Siege': 1, 'Support': 1, 'Interceptor': 2 }
+};
+
+let currentTheme = 'retro';
+let currentWorldSize = 5000;
+let skirmishConfig = { enemies: 1, difficulty: 1.0, condition: CONDITIONS[0], aiProfile: 'Balanced' };
+let savedGameState = null;
+let activeCondition = CONDITIONS[0];
+let matchStats = { startTime: 0, kills: 0, lost: 0 };
+let timeScale = 1.0;
+let cinematicTimer = 0;
+let fogCanvas, fogCtx;
+
+// Achievements check
+function checkAchievements(won, playerMS) {
+    if (!won) return;
+    let matchTime = (Date.now() - matchStats.startTime) / 1000;
+    if (matchTime < 300 && !profileData.achievements.timeWin) { profileData.achievements.timeWin = true; showNotification("Achievement: Blitzkrieg!"); }
+    if (matchStats.lost === 0 && !profileData.achievements.noLoss) { profileData.achievements.noLoss = true; showNotification("Achievement: Flawless Victory!"); }
+    if (playerMS && (playerMS.hp / playerMS.maxHp) < 0.2 && !profileData.achievements.lowHpWin) { profileData.achievements.lowHpWin = true; showNotification("Achievement: By a Thread!"); }
+}
+
+function loadProfile() {
+    let saved = localStorage.getItem('fleetBattle_v2');
+    if (saved) profileData = Object.assign(profileData, JSON.parse(saved));
+    let savedGame = localStorage.getItem('fleetBattleSave_v2');
+    if (savedGame) { savedGameState = JSON.parse(savedGame); let btnCont = document.getElementById('btn-continue'); if(btnCont) btnCont.style.display = 'block'; }
+    
+    let cfgLayout = document.getElementById('cfg-layout'); if(cfgLayout) cfgLayout.value = profileData.layout || 'default';
+    let cfgTheme = document.getElementById('cfg-theme'); if(cfgTheme) cfgTheme.value = profileData.theme || 'retro';
+    applySettings();
+}
+function saveProfile() { localStorage.setItem('fleetBattle_v2', JSON.stringify(profileData)); }
+function saveGame() { localStorage.setItem('fleetBattleSave_v2', JSON.stringify({ active: true, size: currentWorldSize })); let btnCont = document.getElementById('btn-continue'); if(btnCont) btnCont.style.display = 'block'; }
+function clearSave() { localStorage.removeItem('fleetBattleSave_v2'); savedGameState = null; let btnCont = document.getElementById('btn-continue'); if(btnCont) btnCont.style.display = 'none'; }
+function getRank() {
+    if (profileData.xp < 1000) return 'SCRAP CAPTAIN'; if (profileData.xp < 3000) return 'IRON WARLORD';
+    if (profileData.xp < 8000) return 'BRASS COMMANDER'; return 'STEAM ADMIRAL';
+}
+
+function showNotification(msg) {
+    let el = document.getElementById('game-notification');
+    if(el) { el.innerText = msg; el.style.opacity = 1; setTimeout(() => el.style.opacity = 0, 3000); }
+}
+
+function applySettings() {
+    let cfgLayout = document.getElementById('cfg-layout'); if(cfgLayout) profileData.layout = cfgLayout.value;
+    let cfgTheme = document.getElementById('cfg-theme'); if(cfgTheme) profileData.theme = cfgTheme.value;
+    currentTheme = profileData.theme;
+    
+    let mid = document.getElementById('hud-middle');
+    let minimapContainer = document.getElementById('minimap-container');
+    if (mid && minimapContainer) {
+        if (profileData.layout === 'reversed') { mid.classList.add('layout-reversed'); minimapContainer.style.left = '20px'; minimapContainer.style.right = 'auto'; } 
+        else { mid.classList.remove('layout-reversed'); minimapContainer.style.right = '20px'; minimapContainer.style.left = 'auto'; }
+    }
+    saveProfile();
+}
+
+// --- AUDIO ---
+const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+const masterGain = audioCtx.createGain(); masterGain.connect(audioCtx.destination); masterGain.gain.value = 1.0;
+function setAudioState(isPaused) { if (audioCtx.state === 'suspended') audioCtx.resume(); masterGain.gain.setTargetAtTime(isPaused ? 0.1 : 1.0, audioCtx.currentTime, 0.5); }
+function playSound(type, distance) {
+    if (audioCtx.state === 'suspended') return;
+    let vol = Math.max(0.01, 1 - (distance / (currentWorldSize*0.6))); if (vol < 0.05) return;
+    let osc = audioCtx.createOscillator(); let gain = audioCtx.createGain(); osc.connect(gain); gain.connect(masterGain);
+    let now = audioCtx.currentTime;
+    if (type === 'shoot') {
+        osc.type = currentTheme === 'oasis' ? 'sawtooth' : 'square'; 
+        osc.frequency.setValueAtTime(currentTheme==='oasis'?400:150, now); osc.frequency.exponentialRampToValueAtTime(40, now + 0.1);
+        gain.gain.setValueAtTime(0.1 * vol, now); gain.gain.exponentialRampToValueAtTime(0.01, now + 0.1);
+        osc.start(now); osc.stop(now + 0.1);
+    } else if (type === 'hit') {
+        osc.type = 'triangle'; osc.frequency.setValueAtTime(300, now); osc.frequency.exponentialRampToValueAtTime(80, now + 0.2);
+        gain.gain.setValueAtTime(0.2 * vol, now); gain.gain.exponentialRampToValueAtTime(0.01, now + 0.2);
+        osc.start(now); osc.stop(now + 0.2);
+    } else if (type === 'boom') { 
+        osc.type = 'sawtooth'; osc.frequency.setValueAtTime(100, now); osc.frequency.exponentialRampToValueAtTime(20, now + 2.0);
+        gain.gain.setValueAtTime(0.8, now); gain.gain.exponentialRampToValueAtTime(0.01, now + 2.0);
+        osc.start(now); osc.stop(now + 2.0);
+    }
+}
+
+// --- CANVAS & SYSTEM STATE ---
+const canvas = document.getElementById('gameCanvas'); const ctx = canvas.getContext('2d', { alpha: false });
+const minimapCanvas = document.getElementById('minimapCanvas'); const mmCtx = minimapCanvas.getContext('2d');
+let width, height; let camera = { x: 2000, y: 3200, zoom: 0.8 };
+
+function resize() { width = window.innerWidth; height = window.innerHeight; canvas.width = width; canvas.height = height; }
+window.addEventListener('resize', resize); resize();
+
+const mouse = { screenX: 0, screenY: 0, worldX: 0, worldY: 0, isDown: false, middleDown: false };
+const keys = {}; const selectionBox = { startX: 0, startY: 0, active: false };
+
+window.addEventListener('keydown', e => { keys[e.key.toLowerCase()] = true; if (e.key === 'Escape' && (gameState === 'playing' || gameState === 'paused')) togglePause(); });
+window.addEventListener('keyup', e => keys[e.key.toLowerCase()] = false);
+window.addEventListener('mousemove', e => { 
+    mouse.screenX = e.clientX; mouse.screenY = e.clientY; updateMouseWorldCoords();
+    if (mouse.middleDown && gameState === 'playing') { camera.x -= e.movementX / camera.zoom; camera.y -= e.movementY / camera.zoom; }
+});
+window.addEventListener('mousedown', e => {
+    if (e.target.closest('.ui-layer') || e.target.closest('.menu-overlay')) return;
+    if (gameState !== 'playing') return;
+    if (e.button === 0) { mouse.isDown = true; selectionBox.startX = mouse.worldX; selectionBox.startY = mouse.worldY; selectionBox.active = true; } 
+    else if (e.button === 1) { mouse.middleDown = true; } else if (e.button === 2) { handleRightClick(mouse.worldX, mouse.worldY); }
+});
+window.addEventListener('mouseup', e => { if (e.button === 0 && selectionBox.active) { mouse.isDown = false; selectionBox.active = false; applySelection(); } else if (e.button === 1) { mouse.middleDown = false; } });
+window.addEventListener('wheel', e => {
+    if (gameState !== 'playing') return;
+    let oldZoom = camera.zoom; camera.zoom = Math.max(0.2, Math.min(2.0, camera.zoom + (e.deltaY * -0.001)));
+    if (oldZoom !== camera.zoom) { let ratio = camera.zoom / oldZoom; camera.x = mouse.worldX - (mouse.worldX - camera.x) / ratio; camera.y = mouse.worldY - (mouse.worldY - camera.y) / ratio; }
+});
+window.addEventListener('contextmenu', e => e.preventDefault());
+function updateMouseWorldCoords() { mouse.worldX = (mouse.screenX - width / 2) / camera.zoom + camera.x; mouse.worldY = (mouse.screenY - height / 2) / camera.zoom + camera.y; }
+function updateHUDOpacity(val) { document.querySelectorAll('.ui-fade-target').forEach(el => el.style.opacity = val); }
+
+
+// --- DRAWING UTILITIES FOR HAND-DRAWN SCRAP ---
+function drawIrregularPlate(ctxTarget, points, fillStyle, strokeStyle, wobbleAmount, showRivets=true) {
+    ctxTarget.fillStyle = fillStyle;
+    ctxTarget.strokeStyle = strokeStyle;
+    ctxTarget.lineWidth = 3;
+    ctxTarget.lineJoin = 'round';
+    
+    // Slight line wobble
+    ctxTarget.beginPath();
+    ctxTarget.moveTo(points[0].x + randomRange(-wobbleAmount, wobbleAmount), points[0].y + randomRange(-wobbleAmount, wobbleAmount));
+    for(let i=1; i<points.length; i++) {
+        ctxTarget.lineTo(points[i].x + randomRange(-wobbleAmount, wobbleAmount), points[i].y + randomRange(-wobbleAmount, wobbleAmount));
+    }
+    ctxTarget.closePath();
+    ctxTarget.fill();
+    ctxTarget.stroke();
+    
+    if (showRivets) {
+        ctxTarget.fillStyle = strokeStyle;
+        for(let p of points) {
+            ctxTarget.beginPath();
+            ctxTarget.arc(p.x, p.y, 1.5, 0, Math.PI*2);
+            ctxTarget.fill();
+        }
+    }
+}
+
+function drawGear(ctxTarget, x, y, radius, teeth, rot, fillStyle, strokeStyle) {
+    ctxTarget.save(); ctxTarget.translate(x, y); ctxTarget.rotate(rot);
+    ctxTarget.fillStyle = fillStyle; ctxTarget.strokeStyle = strokeStyle; ctxTarget.lineWidth = 2;
+    ctxTarget.beginPath();
+    for(let i=0; i<teeth*2; i++) {
+        let r = (i%2 === 0) ? radius : radius * 0.75;
+        let a = (Math.PI / teeth) * i;
+        ctxTarget.lineTo(Math.cos(a)*r, Math.sin(a)*r);
+    }
+    ctxTarget.closePath(); ctxTarget.fill(); ctxTarget.stroke();
+    ctxTarget.fillStyle = strokeStyle;
+    ctxTarget.beginPath(); ctxTarget.arc(0,0, radius*0.3, 0, Math.PI*2); ctxTarget.fill();
+    ctxTarget.restore();
+}
+
+function drawEngineFlame(ctxTarget, x, y, width, length, timeOffset) {
+    ctxTarget.save(); ctxTarget.translate(x, y);
+    let flicker = Math.sin(frameCount * 0.5 + timeOffset) * 0.2 + 0.8;
+    let clr1 = currentTheme === 'oasis' ? '#00ffff' : '#ff8800';
+    let clr2 = currentTheme === 'oasis' ? '#ffffff' : '#ffff00';
+    
+    ctxTarget.fillStyle = clr1;
+    ctxTarget.beginPath(); ctxTarget.moveTo(-width/2, 0); ctxTarget.lineTo(0, length*flicker); ctxTarget.lineTo(width/2, 0); ctxTarget.closePath(); ctxTarget.fill();
+    ctxTarget.fillStyle = clr2;
+    ctxTarget.beginPath(); ctxTarget.moveTo(-width/4, 0); ctxTarget.lineTo(0, length*0.6*flicker); ctxTarget.lineTo(width/4, 0); ctxTarget.closePath(); ctxTarget.fill();
+    ctxTarget.restore();
+}
+
+
+// --- MENUS ---
+let gameState = 'menu'; let frameCount = 0;
+function switchMenu(target) {
+    document.querySelectorAll('.menu-screen').forEach(el => el.classList.remove('active'));
+    
+    const menuContainer = document.getElementById('menus-container');
+    const gameUi = document.getElementById('game-ui');
+    const pauseUi = document.getElementById('pause-ui');
+    
+    if (menuContainer) menuContainer.style.display = target === 'none' ? 'none' : 'flex';
+    if (gameUi) gameUi.style.display = target === 'none' ? 'flex' : 'none';
+    if (pauseUi) pauseUi.style.display = 'none';
+    
+    // Safety clear of cinematic overlays when switching back to menus
+    let banner = document.getElementById('cinematic-banner');
+    if (banner) banner.classList.remove('show');
+    timeScale = 1.0;
+    cinematicTimer = 0;
+
+    if (target === 'none') {
+        gameState = 'playing'; if(audioCtx.state === 'suspended') audioCtx.resume(); setAudioState(false);
+    } else {
+        gameState = target; 
+        const targetMenu = document.getElementById('menu-' + target);
+        if(target !== 'none' && targetMenu) targetMenu.classList.add('active');
+        
+        if (target === 'profile') {
+            let prRank = document.getElementById('prof-rank'); if(prRank) prRank.innerText = getRank(); 
+            let prBat = document.getElementById('prof-battles'); if(prBat) prBat.innerText = profileData.battles;
+            let prWin = document.getElementById('prof-wins'); if(prWin) prWin.innerText = profileData.wins; 
+            let prMs = document.getElementById('prof-ms'); if(prMs) prMs.innerText = profileData.msDestroyed;
+            let prLost = document.getElementById('prof-lost'); if(prLost) prLost.innerText = profileData.shipsLost; 
+            let prXp = document.getElementById('prof-xp'); if(prXp) prXp.innerText = profileData.xp;
+            
+            let achHtml = `Time Attack (Win < 5m): ${profileData.achievements.timeWin?'[UNLOCKED]':'[LOCKED]'}<br>
+                           Flawless (No Losses): ${profileData.achievements.noLoss?'[UNLOCKED]':'[LOCKED]'}<br>
+                           Close Call (MS < 20%): ${profileData.achievements.lowHpWin?'[UNLOCKED]':'[LOCKED]'}`;
+            let achList = document.getElementById('achievement-list');
+            if(achList) achList.innerHTML = achHtml;
+        }
+        if (target === 'customize') {
+            let cName = document.getElementById('cust-name'); if(cName) cName.value = profileData.fleetName; 
+            let cColor = document.getElementById('cust-color'); if(cColor) cColor.value = profileData.colorAccent;
+            let cCmd = document.getElementById('cust-commander'); if(cCmd) cCmd.value = profileData.commanderTree;
+        }
+        if (target === 'skirmish') renderFleetBuilder();
+    }
+}
+
+function renderFleetBuilder() {
+    let html = ''; let totalPts = 0;
+    for (let cls in SHIP_CLASSES) {
+        let count = profileData.fleetBuild[cls] || 0;
+        totalPts += count * SHIP_CLASSES[cls].cost;
+        html += `<div class="flex justify-between items-center mb-1 text-sm border-b border-black pb-1">
+            <span class="w-24">${cls} (${SHIP_CLASSES[cls].cost})</span>
+            <div class="flex items-center space-x-2">
+                <button class="px-2 bg-gray-300 font-bold border border-black" onclick="updateFleetBuild('${cls}', -1)">-</button>
+                <span class="w-4 text-center">${count}</span>
+                <button class="px-2 bg-gray-300 font-bold border border-black" onclick="updateFleetBuild('${cls}', 1)">+</button>
+            </div>
+        </div>`;
+    }
+    let builder = document.getElementById('fleet-builder');
+    if (builder) builder.innerHTML = html;
+    
+    let ptEl = document.getElementById('fleet-points'); 
+    if (ptEl) {
+        ptEl.innerText = totalPts;
+        ptEl.className = totalPts > 200 ? "text-red-700 font-black" : "text-black";
+    }
+    
+    let btnLaunch = document.getElementById('btn-launch-skirmish');
+    if (btnLaunch) btnLaunch.disabled = totalPts > 200 || totalPts === 0;
+}
+function updateFleetBuild(cls, delta) {
+    if (!profileData.fleetBuild[cls]) profileData.fleetBuild[cls] = 0;
+    profileData.fleetBuild[cls] = Math.max(0, profileData.fleetBuild[cls] + delta);
+    renderFleetBuilder();
+}
+function saveCustomization() { 
+    let cName = document.getElementById('cust-name'); if(cName) profileData.fleetName = cName.value; 
+    let cColor = document.getElementById('cust-color'); if(cColor) profileData.colorAccent = cColor.value; 
+    let cCmd = document.getElementById('cust-commander'); if(cCmd) profileData.commanderTree = cCmd.value; 
+    saveProfile(); switchMenu('main'); 
+}
+
+function launchSkirmish() {
+    let cfgMapsize = document.getElementById('cfg-mapsize'); skirmishConfig.size = parseInt(cfgMapsize ? cfgMapsize.value : 5000);
+    let cfgEnemies = document.getElementById('cfg-enemies'); skirmishConfig.enemies = parseInt(cfgEnemies ? cfgEnemies.value : 1);
+    let cfgDifficulty = document.getElementById('cfg-difficulty'); skirmishConfig.difficulty = parseFloat(cfgDifficulty ? cfgDifficulty.value : 1.0);
+    let cfgEnemyAi = document.getElementById('cfg-enemy-ai'); skirmishConfig.aiProfile = cfgEnemyAi ? cfgEnemyAi.value : 'Balanced';
+    let hazardsChecked = document.getElementById('cfg-hazards');
+    if (hazardsChecked) { activeCondition = hazardsChecked.checked ? CONDITIONS[Math.floor(Math.random() * CONDITIONS.length)] : CONDITIONS[0]; } 
+    else { activeCondition = CONDITIONS[0]; }
+    
+    currentWorldSize = skirmishConfig.size; profileData.battles++; saveProfile(); clearSave();
+    initGame();
+}
+function togglePause() {
+    let pauseUi = document.getElementById('pause-ui');
+    if (!pauseUi) return;
+    if (gameState === 'playing') { gameState = 'paused'; pauseUi.style.display = 'flex'; setAudioState(true); } 
+    else if (gameState === 'paused') { gameState = 'playing'; pauseUi.style.display = 'none'; setAudioState(false); }
+}
+function resumeGame() { if (savedGameState) { currentWorldSize = savedGameState.size; initGame(); } } 
+
+// --- ENGINE ---
+class Vector {
+    constructor(x, y) { this.x = x; this.y = y; }
+    add(v) { this.x += v.x; this.y += v.y; return this; } sub(v) { this.x -= v.x; this.y -= v.y; return this; }
+    mult(n) { this.x *= n; this.y *= n; return this; } mag() { return Math.sqrt(this.x*this.x + this.y*this.y); }
+    normalize() { let m = this.mag(); if(m!==0) { this.x/=m; this.y/=m; } return this; } dist(v) { return Math.hypot(this.x - v.x, this.y - v.y); } copy() { return new Vector(this.x, this.y); }
+}
+function randomRange(min, max) { return Math.random() * (max - min) + min; }
+
+let entities = []; let particles = []; let lasers = []; let obstacles = []; let capturePoints = []; let menuEntities = [];
+let playerEnergy = 0; const MAX_ENERGY = 100;
+const PERSONALITIES = ['Aggressor', 'Hunter', 'Guardian', 'Flanker'];
+function getPlayerFaction() { return { id: 1, color: profileData.colorAccent, light: '#ffffff', enemyId: 2 }; }
+function getEnemyFaction() { return { id: 2, color: currentTheme === 'oasis' ? '#ff007f' : '#8b2b2b', light: currentTheme === 'oasis' ? '#ccff00' : '#ff4500', enemyId: 1 }; }
+
+// --- ENVIRONMENT ---
+class Obstacle {
+    constructor(x, y, radius, type) {
+        this.pos = new Vector(x, y); this.radius = radius; this.type = type; this.rotation = Math.random() * Math.PI * 2; this.rotSpeed = randomRange(-0.005, 0.005);
+        this.points = []; let numPoints = type === 'asteroid' ? 10 : 6;
+        for(let i=0; i<numPoints; i++) { let angle = (Math.PI * 2 / numPoints) * i; this.points.push({ a: angle, r: radius * (type === 'asteroid' ? randomRange(0.8, 1.2) : (i%2===0 ? 1 : 0.5)) }); }
+    }
+    draw(ctx, isMenu=false) {
+        if (!isMenu && gameState === 'playing' && timeScale > 0.1) this.rotation += this.rotSpeed * timeScale;
+        else if (isMenu) this.rotation += this.rotSpeed * 0.5;
+
+        let strokeColor = currentTheme === 'oasis' ? '#ffffff' : '#1a1817';
+        let fillColor = currentTheme === 'oasis' ? '#110033' : (this.type === 'asteroid' ? '#b5a895' : '#8b9bb4');
+
+        // Shadow
+        ctx.save(); ctx.translate(this.pos.x + 20, this.pos.y + 20); ctx.rotate(this.rotation); ctx.fillStyle = 'rgba(0,0,0,0.6)'; ctx.beginPath();
+        for(let i=0; i<this.points.length; i++) { let p = this.points[i]; let x = Math.cos(p.a) * p.r; let y = Math.sin(p.a) * p.r; if(i===0) ctx.moveTo(x, y); else ctx.lineTo(x, y); }
+        ctx.closePath(); ctx.fill(); ctx.restore();
+
+        ctx.save(); ctx.translate(this.pos.x, this.pos.y); ctx.rotate(this.rotation);
+        
+        drawIrregularPlate(ctx, this.points.map(p => ({x: Math.cos(p.a)*p.r, y: Math.sin(p.a)*p.r})), fillColor, strokeColor, 0, false);
+        
+        if (this.type !== 'asteroid') {
+             drawGear(ctx, 0, 0, this.radius*0.4, 8, -this.rotation*2, currentTheme==='oasis'?'#ff0055':'#555', strokeColor);
+        }
+        ctx.restore();
+    }
+}
+
+class CapturePoint {
+    constructor(x, y, type) {
+        this.pos = new Vector(x, y); this.radius = 100; this.type = type; // 'refinery', 'relay'
+        this.owner = 0; this.progress = 0; // -100 (Enemy) to 100 (Player)
+        this.angle = 0;
+    }
+    update() {
+        if (timeScale < 1) return;
+        this.angle += 0.005;
+        let pCount = 0, eCount = 0;
+        entities.forEach(e => { if(!e.isDead && e.pos.dist(this.pos) < this.radius) { if(e.faction.id === 1) pCount++; else eCount++; } });
+        if (pCount > eCount) this.progress += 0.2; else if (eCount > pCount) this.progress -= 0.2;
+        this.progress = Math.max(-100, Math.min(100, this.progress));
+        
+        let oldOwner = this.owner;
+        if (this.progress === 100) this.owner = 1; else if (this.progress === -100) this.owner = 2; else if (this.progress > -10 && this.progress < 10) this.owner = 0;
+        if (oldOwner !== this.owner && this.owner === 1) showNotification("Secured: " + this.type);
+        if (oldOwner === 1 && this.owner !== 1) showNotification("Lost: " + this.type);
+
+        if (this.owner === 1 && frameCount % 60 === 0) { if (this.type === 'refinery') playerEnergy = Math.min(MAX_ENERGY, playerEnergy + 5); }
+    }
+    draw(ctx) {
+        ctx.save(); ctx.translate(this.pos.x, this.pos.y); ctx.rotate(this.angle);
+        ctx.beginPath(); ctx.arc(0, 0, this.radius, 0, Math.PI*2);
+        
+        if (currentTheme === 'oasis') {
+            ctx.fillStyle = this.owner === 1 ? 'rgba(0,255,255,0.2)' : (this.owner === 2 ? 'rgba(255,0,127,0.2)' : 'rgba(255,255,255,0.1)');
+            ctx.fill(); ctx.strokeStyle = '#fff'; ctx.lineWidth=2; ctx.setLineDash([15, 20]); ctx.stroke(); ctx.setLineDash([]);
+            drawGear(ctx, 0, 0, 40, 10, -this.angle*2, '#ffffff', '#000');
+            ctx.fillStyle = this.owner === 1 ? profileData.colorAccent : (this.owner === 2 ? '#ff007f' : '#000');
+            ctx.beginPath(); ctx.arc(0, 0, 15, 0, Math.PI*2); ctx.fill();
+        } else {
+            ctx.fillStyle = this.owner === 1 ? 'rgba(0,128,128,0.1)' : (this.owner === 2 ? 'rgba(139,43,43,0.1)' : 'rgba(100,100,100,0.1)');
+            ctx.fill(); ctx.strokeStyle = '#1a1817'; ctx.setLineDash([10, 15]); ctx.stroke(); ctx.setLineDash([]);
+            drawGear(ctx, 0, 0, 40, 10, -this.angle*2, '#b5a895', '#1a1817');
+            ctx.fillStyle = this.owner === 1 ? profileData.colorAccent : (this.owner === 2 ? '#8b2b2b' : '#555');
+            ctx.beginPath(); ctx.arc(0, 0, 15, 0, Math.PI*2); ctx.fill();
+        }
+        ctx.restore();
+        
+        ctx.fillStyle = '#1a1817'; ctx.fillRect(this.pos.x - 40, this.pos.y + 40, 80, 8);
+        if (this.progress > 0) { ctx.fillStyle = profileData.colorAccent; ctx.fillRect(this.pos.x, this.pos.y + 41, 38 * (this.progress/100), 6); }
+        else if (this.progress < 0) { ctx.fillStyle = currentTheme === 'oasis' ? '#ff007f' : '#8b2b2b'; ctx.fillRect(this.pos.x + (38*(this.progress/100)), this.pos.y + 41, 38 * Math.abs(this.progress/100), 6); }
+    }
+}
+
+// --- ENTITIES ---
+class Entity {
+    constructor(x, y, faction) {
+        this.id = Math.random().toString(36).substr(2, 9); this.pos = new Vector(x, y); this.vel = new Vector(0, 0); this.acc = new Vector(0, 0);
+        this.faction = faction; this.hp = 100; this.maxHp = 100; this.radius = 20; this.isDead = false; this.type = 'entity'; this.angle = 0;
+        this.selected = false; this.disabledTimer = 0; this.shieldTimer = 0;
+        
+        // Asymmetry generation per entity
+        this.designSeed = Math.random() * 1000;
+        this.gearRot = randomRange(0, Math.PI);
+        this.asym = [randomRange(-3,3), randomRange(-3,3), randomRange(-3,3), randomRange(-3,3)];
+    }
+    takeDamage(amount) {
+        if (this.shieldTimer > 0) amount *= 0.1;
+        this.hp -= amount;
+        if (this.hp <= 0 && !this.isDead) { this.hp = 0; this.die(); }
+    }
+    die() {
+        this.isDead = true;
+        if(gameState === 'playing') {
+            createExplosion(this.pos.x, this.pos.y, currentTheme === 'oasis' ? '#ffea00' : '#ff4500', this.type==='MotherShip'?100:30, this.type==='MotherShip'?15:6);
+            playSound(this.type === 'MotherShip' ? 'boom' : 'hit', this.pos.dist(camera));
+            
+            if (this.faction.id === 1 && this.type === 'Ship') matchStats.lost++;
+            if (this.faction.id === 2 && this.type === 'Ship') matchStats.kills++;
+            
+            if (this.type === 'MotherShip') {
+                cinematicTimer = 90; timeScale = 0.2; 
+                let banner = document.getElementById('cinematic-banner');
+                if (banner) {
+                    banner.classList.add('show');
+                    banner.innerText = this.faction.id === 2 ? 'VICTORY' : 'DEFEAT';
+                    banner.style.color = this.faction.id === 2 ? profileData.colorAccent : (currentTheme === 'oasis' ? '#ff007f' : '#8b2b2b');
+                }
+                entities.forEach(e => { if (e.faction.id === this.faction.id) e.disabledTimer = 99999; });
+            }
+        }
+    }
+    applyForce(force) { this.acc.add(force); }
+}
+
+class MotherShip extends Entity {
+    constructor(x, y, faction) {
+        super(x, y, faction);
+        let hpMod = faction.id === 2 ? skirmishConfig.difficulty : (profileData.commanderTree === 'Defensive' ? 1.3 : 1.0);
+        this.hp = 5000 * hpMod; this.maxHp = this.hp; this.radius = 120; this.type = 'MotherShip'; this.auraRadius = 600;
+        this.fireRate = 30; this.fireTimer = 0;
+        this.aiEnergy = 0;
+        
+        // Scrap generation
+        this.plates = [
+            [{x: 150, y: 0}, {x: 80, y: -40}, {x: -120, y: -40+this.asym[0]}, {x: -140, y: 30}, {x: 80, y: 40+this.asym[1]}],
+            [{x: 30, y: -50}, {x: -30, y: -70+this.asym[2]}, {x: -80, y: -40}, {x: 0, y: -20}],
+            [{x: 30, y: 50}, {x: -30, y: 70+this.asym[3]}, {x: -80, y: 40}, {x: 0, y: 20}]
+        ];
+    }
+    update() {
+        if (this.isDead) return;
+        this.angle += 0.001 * timeScale;
+        this.gearRot += 0.01 * timeScale;
+
+        // AI specific spawning mechanic (energy increases faster the more player ships die)
+        if (this.faction.id === 2 && timeScale > 0) {
+            let aiRate = 12 + (matchStats.lost * 2); 
+            this.aiEnergy += (aiRate / 60) * timeScale;
+            if (this.aiEnergy >= 60) {
+                this.aiEnergy -= 60;
+                buildAIFleet(this.pos.x, this.pos.y, this.faction, skirmishConfig.aiProfile, 60);
+            }
+        }
+
+        if (Math.random() < 0.05 * timeScale) {
+            let healAmt = (this.faction.id === 1 && profileData.commanderTree === 'Defensive') ? 8 : 4;
+            entities.forEach(e => { if (e.faction.id === this.faction.id && e !== this && !e.isDead && this.pos.dist(e.pos) < this.auraRadius) e.hp = Math.min(e.maxHp, e.hp + healAmt); });
+        }
+
+        this.fireTimer -= timeScale;
+        if (this.fireTimer <= 0 && this.disabledTimer <= 0) {
+            let closest = null; let record = this.auraRadius;
+            for (let e of entities) { if (e.faction.id !== this.faction.id && !e.isDead) { let d = this.pos.dist(e.pos); if (d < record) { record = d; closest = e; } } }
+            if (closest) {
+                let ang = Math.atan2(closest.pos.y - this.pos.y, closest.pos.x - this.pos.x);
+                let sx = this.pos.x + Math.cos(ang) * (this.radius * 0.8); let sy = this.pos.y + Math.sin(ang) * (this.radius * 0.8);
+                let dmg = (this.faction.id===1 && activeCondition.id==='Overcharge') ? 45 : 30;
+                lasers.push(new Laser(sx, sy, closest.pos, this.faction.light, dmg, this.faction.id === 1, this.id));
+                this.fireTimer = this.fireRate;
+            }
+        }
+        if (this.disabledTimer > 0) this.disabledTimer -= timeScale;
+        if (this.shieldTimer > 0) this.shieldTimer -= timeScale;
+        
+        // Steam/Smoke stacks
+        if (frameCount % 10 === 0 && timeScale > 0) {
+            let stackX = this.pos.x + Math.cos(this.angle - Math.PI/2) * 50;
+            let stackY = this.pos.y + Math.sin(this.angle - Math.PI/2) * 50;
+            particles.push(new Particle(stackX, stackY, '#aaa', 2, 40, 5));
+        }
+
+        if (this.hp < this.maxHp * 0.25 && Math.random() < 0.2) createExplosion(this.pos.x + randomRange(-50,50), this.pos.y + randomRange(-50,50), currentTheme === 'oasis' ? '#ffea00' : '#ff4500', 1, 3);
+    }
+
+    draw(ctx, isMenu=false) {
+        if (this.isDead && !isMenu) return;
+        let rad = this.radius;
+        let strokeColor = currentTheme === 'oasis' ? '#ffffff' : '#1a1817';
+        let baseColor = currentTheme === 'oasis' ? '#110033' : '#b5a895';
+        let accentDark = currentTheme === 'oasis' ? '#000000' : '#4a3f35';
+
+        // Drop shadow
+        ctx.save(); ctx.translate(this.pos.x + 30, this.pos.y + 30); ctx.rotate(this.angle); ctx.fillStyle = 'rgba(0,0,0,0.5)';
+        ctx.beginPath(); ctx.moveTo(this.plates[0][0].x, this.plates[0][0].y); for(let p of this.plates[0]) ctx.lineTo(p.x, p.y); ctx.fill();
+        ctx.restore();
+
+        ctx.save(); ctx.translate(this.pos.x, this.pos.y);
+        
+        if(this.hp < this.maxHp * 0.2 && !isMenu) ctx.rotate(this.angle + randomRange(-0.02, 0.02)); else ctx.rotate(this.angle);
+        
+        ctx.beginPath(); ctx.arc(0, 0, this.auraRadius, 0, Math.PI * 2); ctx.fillStyle = `rgba(${this.faction.id===1?'0,255,255':'255,0,127'}, 0.05)`; ctx.fill();
+        if (this.shieldTimer > 0) { ctx.beginPath(); ctx.arc(0, 0, rad + 20, 0, Math.PI*2); ctx.strokeStyle = '#fff'; ctx.lineWidth = 4; ctx.stroke(); }
+        
+        // Base Scaffolding
+        ctx.strokeStyle = accentDark; ctx.lineWidth = 8;
+        ctx.beginPath(); ctx.moveTo(0,-rad); ctx.lineTo(0,rad); ctx.moveTo(-rad,0); ctx.lineTo(rad,0); ctx.stroke();
+
+        // Main Gears
+        drawGear(ctx, -rad*0.2, 0, 70, 12, this.gearRot, baseColor, strokeColor);
+        drawGear(ctx, rad*0.3, -30, 40, 8, -this.gearRot*1.5, this.faction.color, strokeColor);
+
+        // Hand-drawn Layered Plates
+        drawIrregularPlate(ctx, this.plates[0], currentTheme==='oasis'?'#e6ddc5':'#e6ddc5', strokeColor, 1);
+        drawIrregularPlate(ctx, this.plates[1], this.faction.color, strokeColor, 1);
+        drawIrregularPlate(ctx, this.plates[2], baseColor, strokeColor, 1);
+
+        // Furnace Core
+        ctx.fillStyle = strokeColor; ctx.beginPath(); ctx.arc(-20, 0, 35, 0, Math.PI*2); ctx.fill();
+        ctx.fillStyle = accentDark; ctx.beginPath(); ctx.arc(-20, 0, 25, 0, Math.PI*2); ctx.fill();
+        ctx.fillStyle = currentTheme === 'oasis' ? '#ccff00' : '#ffaa00';
+        ctx.beginPath(); ctx.arc(-20, 0, 15 + Math.sin(frameCount*0.1)*5, 0, Math.PI*2); ctx.fill();
+        
+        // Pipes
+        ctx.strokeStyle = strokeColor; ctx.lineWidth = 6;
+        ctx.beginPath(); ctx.moveTo(-20, 35); ctx.lineTo(-20, 70); ctx.lineTo(-60, 70); ctx.stroke();
+        ctx.strokeStyle = accentDark; ctx.lineWidth = 2;
+        ctx.beginPath(); ctx.moveTo(-20, 35); ctx.lineTo(-20, 70); ctx.lineTo(-60, 70); ctx.stroke();
+
+        ctx.restore();
+        
+        if (!isMenu && gameState === 'playing') {
+            ctx.fillStyle = '#1a1817'; ctx.fillRect(this.pos.x - 50, this.pos.y - rad - 30, 100, 10);
+            ctx.fillStyle = this.faction.color; ctx.fillRect(this.pos.x - 48, this.pos.y - rad - 28, 96 * (this.hp / this.maxHp), 6);
+        }
+    }
+}
+
+class Ship extends Entity {
+    constructor(x, y, faction, shipClass) {
+        super(x, y, faction);
+        let stats = SHIP_CLASSES[shipClass];
+        this.shipClass = shipClass; this.type = 'Ship';
+        this.hp = stats.hp; this.maxHp = stats.hp;
+        this.radius = shipClass === 'Siege' ? 25 : (shipClass === 'Interceptor' ? 15 : 20);
+        this.personality = stats.role; this.maxSpeed = stats.speed; this.maxForce = stats.maxForce;
+        this.baseRange = stats.range; this.dmg = stats.dmg; this.fireRate = stats.fireRate;
+        this.detectionRange = this.baseRange * 2.0;
+        
+        if(faction.id === 1 && profileData.commanderTree === 'Offensive') { this.dmg *= 1.2; }
+        
+        this.target = null; this.commandOverride = null; this.aiTimer = Math.floor(randomRange(0, 60));
+        this.fireTimer = randomRange(0, this.fireRate); 
+        this.state = 'Idle'; // Idle, MoveToObjective, EngageEnemy, PursueEnemy, AttackMotherShip, Fleeing
+        this.targetLockTimer = 0;
+
+        // Pre-generate irregular scrap plates for the hull
+        this.genPlates();
+    }
+
+    genPlates() {
+        let rad = this.radius;
+        this.pBase = []; this.pColor = []; this.pAccent = [];
+        
+        if (this.shipClass === 'Frigate') {
+            this.pBase = [{x: rad*1.2, y: 0}, {x: rad*0.2, y: -rad*0.5+this.asym[0]}, {x: -rad, y: -rad*0.4}, {x: -rad, y: rad*0.4}, {x: rad*0.2, y: rad*0.5+this.asym[1]}];
+            this.pColor = [{x: rad*0.5, y: -rad*0.3}, {x: -rad*0.8, y: -rad*0.3}, {x: -rad*0.8, y: 0}];
+            this.pAccent = [{x: -rad*0.2, y: rad*0.2}, {x: -rad*1.2, y: rad*0.2}, {x: -rad*1.2, y: rad*0.6}];
+        } else if (this.shipClass === 'Destroyer') {
+            this.pBase = [{x: rad, y: -rad*0.6}, {x: rad, y: rad*0.6}, {x: -rad, y: rad*0.8+this.asym[0]}, {x: -rad, y: -rad*0.8+this.asym[1]}];
+            this.pColor = [{x: rad*0.8, y: -rad*0.4}, {x: rad*0.8, y: rad*0.4}, {x: 0, y: rad*0.5}, {x: 0, y: -rad*0.5}];
+        } else if (this.shipClass === 'Siege') {
+            this.pBase = [{x: rad*0.5, y: -rad*0.5}, {x: rad*0.5, y: rad*0.5}, {x: -rad*1.2, y: rad*0.6+this.asym[0]}, {x: -rad*1.2, y: -rad*0.6+this.asym[1]}];
+            this.pColor = [{x: rad*1.8, y: -rad*0.1}, {x: rad*1.8, y: rad*0.1}, {x: rad*0.5, y: rad*0.2}, {x: rad*0.5, y: -rad*0.2}]; // The huge cannon barrel
+            this.pAccent = [{x: 0, y: -rad*0.4}, {x: 0, y: rad*0.4}, {x: -rad, y: rad*0.4}, {x: -rad, y: -rad*0.4}];
+        } else if (this.shipClass === 'Interceptor') {
+            this.pBase = [{x: rad*1.8, y: 0}, {x: -rad*0.5, y: -rad+this.asym[0]}, {x: -rad, y: -rad*0.2}, {x: -rad, y: rad*0.2}, {x: -rad*0.5, y: rad+this.asym[1]}];
+            this.pColor = [{x: rad*1.2, y: 0}, {x: -rad*0.2, y: -rad*0.6}, {x: -rad*0.2, y: rad*0.6}];
+        } else if (this.shipClass === 'Support') {
+            this.pBase = [{x: rad*0.8, y: -rad*0.4}, {x: rad*0.8, y: rad*0.4}, {x: -rad*1.2, y: rad*0.7+this.asym[0]}, {x: -rad*1.2, y: -rad*0.7+this.asym[1]}];
+            this.pColor = [{x: rad*0.4, y: -rad*0.2}, {x: rad*0.4, y: rad*0.2}, {x: -rad*0.4, y: rad*0.2}, {x: -rad*0.4, y: -rad*0.2}];
+        }
+    }
+
+    update() {
+        if (this.isDead) return;
+
+        let myMS = entities.find(e => e.type === 'MotherShip' && e.faction.id === this.faction.id);
+        let morale = myMS ? (myMS.hp / myMS.maxHp) : 0;
+        let speedMult = morale > 0.8 ? 1.2 : 1.0;
+        
+        if (activeCondition.id === 'ScrapStorm' && Math.random() < 0.005) this.takeDamage(2);
+
+        if (this.disabledTimer > 0) {
+            this.disabledTimer -= timeScale; this.vel.mult(0.9);
+        } else {
+            this.runAI();
+            let separateForce = this.separate(entities).mult(1.5);
+            let avoidForce = this.avoidObstacles(obstacles); 
+            
+            if (avoidForce.mag() > 0) this.applyForce(avoidForce.mult(2.5)); else this.applyForce(separateForce);
+
+            this.vel.add(this.acc);
+            let curMax = this.maxSpeed * speedMult;
+            this.vel.x = Math.max(-curMax, Math.min(curMax, this.vel.x)); this.vel.y = Math.max(-curMax, Math.min(curMax, this.vel.y));
+            this.pos.add(this.vel.copy().mult(timeScale));
+            if (this.vel.mag() > 0.1) this.angle = Math.atan2(this.vel.y, this.vel.x);
+        }
+        this.acc.mult(0);
+        this.gearRot += this.vel.mag() * 0.05 * timeScale;
+        
+        this.fireTimer -= timeScale;
+        
+        // Always try to fire if we have a target and we aren't fleeing
+        if (this.target && !this.target.isDead && this.disabledTimer <= 0 && this.state !== 'Fleeing') {
+            let dist = this.pos.dist(this.target.pos);
+            if (dist < this.baseRange) {
+                if (this.fireTimer <= 0) {
+                    this.angle = Math.atan2(this.target.pos.y - this.pos.y, this.target.pos.x - this.pos.x);
+                    
+                    if (this.shipClass === 'Support' && this.target.faction.id === this.faction.id) {
+                        this.target.hp = Math.min(this.target.maxHp, this.target.hp + this.dmg);
+                        ctx.strokeStyle = currentTheme === 'oasis' ? '#ffea00' : '#0f0'; ctx.lineWidth = currentTheme === 'oasis' ? 4 : 2;
+                        ctx.beginPath(); ctx.moveTo(this.pos.x, this.pos.y); ctx.lineTo(this.target.pos.x, this.target.pos.y); ctx.stroke();
+                    } else {
+                        let targetPos = this.target.pos.copy(); targetPos.x += randomRange(-10, 10); targetPos.y += randomRange(-10, 10);
+                        let nx = this.pos.x + Math.cos(this.angle) * this.radius * 1.5; let ny = this.pos.y + Math.sin(this.angle) * this.radius * 1.5;
+                        let finalDmg = this.dmg * (activeCondition.id==='Overcharge'?1.5:1.0);
+                        if(this.shipClass === 'Siege' && this.target.type === 'MotherShip') finalDmg *= 2; 
+                        lasers.push(new Laser(nx, ny, targetPos, this.faction.light, finalDmg, this.faction.id === 1, this.id));
+                    }
+                    this.fireTimer = this.fireRate * (morale > 0.8 ? 0.8 : 1.0); 
+                }
+            }
+        }
+
+        if (this.shieldTimer > 0) this.shieldTimer -= timeScale;
+        
+        if (this.pos.x < 100) this.vel.x += 0.5; if (this.pos.x > currentWorldSize - 100) this.vel.x -= 0.5;
+        if (this.pos.y < 100) this.vel.y += 0.5; if (this.pos.y > currentWorldSize - 100) this.vel.y -= 0.5;
+        
+        if (this.hp < this.maxHp * 0.5 && Math.random() < 0.1 * timeScale) particles.push(new Particle(this.pos.x, this.pos.y, '#555', 2, 20, 2));
+    }
+
+    runAI() {
+        this.aiTimer -= timeScale;
+        if (this.targetLockTimer > 0) this.targetLockTimer -= timeScale;
+
+        let myMS = entities.find(e => e.type === 'MotherShip' && e.faction.id === this.faction.id);
+        let morale = myMS ? (myMS.hp / myMS.maxHp) : 0;
+        
+        // Fleeing override
+        if (morale < 0.25 && !this.commandOverride && this.faction.id !== 1 && Math.random() < 0.01) { 
+            this.state = 'Fleeing'; 
+        }
+
+        if (this.state === 'Fleeing') {
+            let edgeTarget = new Vector(this.pos.x < currentWorldSize/2 ? 0 : currentWorldSize, this.pos.y < currentWorldSize/2 ? 0 : currentWorldSize);
+            this.applyForce(this.seek(edgeTarget)); return;
+        }
+
+        // Process Command Overrides
+        if (this.commandOverride) {
+            if (this.commandOverride.type === 'move') {
+                this.state = 'MoveToObjective';
+                if (this.pos.dist(this.commandOverride.pos) < 50) this.commandOverride = null;
+                else this.applyForce(this.seek(this.commandOverride.pos));
+                
+                // Still strictly evaluate for targets of opportunity while moving!
+                if (this.aiTimer <= 0) {
+                    this.aiTimer = 60;
+                    this.evaluateTargets(true); // true = prioritize close targets
+                }
+                return;
+            } else if (this.commandOverride.type === 'attack') {
+                this.target = this.commandOverride.target;
+                if (this.target && this.target.isDead) this.commandOverride = null;
+                else {
+                    this.state = this.target.type === 'MotherShip' ? 'AttackMotherShip' : 'PursueEnemy';
+                    this.maneuverAroundTarget();
+                }
+                return;
+            }
+        }
+
+        // Failsafe: Reached enemy MS but enemy ships still exist
+        if (this.target && this.target.type === 'MotherShip' && !this.commandOverride) {
+            let enemyShips = entities.filter(e => e.faction.id !== this.faction.id && e.type === 'Ship' && !e.isDead);
+            if (enemyShips.length > 0) {
+                this.target = null; // Drop lock, forces re-eval
+                this.targetLockTimer = 0;
+            }
+        }
+
+        // Evaluate targets periodically, or instantly if target is lost
+        if (this.aiTimer <= 0 || !this.target || this.target.isDead) { 
+            this.aiTimer = 60; 
+            this.evaluateTargets(false); 
+        }
+
+        // Execute maneuver based on current state
+        if (this.target && !this.target.isDead) {
+            let dist = this.pos.dist(this.target.pos);
+            if (this.target.type === 'MotherShip') {
+                this.state = 'AttackMotherShip';
+            } else {
+                this.state = dist < this.detectionRange ? 'EngageEnemy' : 'PursueEnemy';
+            }
+            this.maneuverAroundTarget();
+        } else {
+            this.state = 'Idle';
+            this.vel.mult(0.98); 
+        }
+    }
+
+    evaluateTargets(movingOverride) {
+        let possibleTargets = entities.filter(e => e.faction.id !== this.faction.id && !e.isDead);
+        if (this.shipClass === 'Support') {
+            possibleTargets = entities.filter(e => e.faction.id === this.faction.id && !e.isDead && e.hp < e.maxHp && e !== this);
+        }
+        
+        if (possibleTargets.length === 0) { this.target = null; return; }
+
+        let enemyShips = possibleTargets.filter(e => e.type === 'Ship');
+        let validTargets = [];
+
+        if (this.shipClass === 'Support') {
+            validTargets = possibleTargets;
+        } else {
+            // STRICT MOTHER SHIP LOCK RULE
+            let explicitMSCommand = this.commandOverride && this.commandOverride.target && this.commandOverride.target.type === 'MotherShip';
+            
+            if (enemyShips.length > 0 && !explicitMSCommand) {
+                validTargets = enemyShips; // MS not allowed
+            } else {
+                validTargets = possibleTargets; // MS allowed
+            }
+
+            // Path Block / Engagement Collision Logic
+            // If moving somewhere, but enemies are right next to us, intercept them!
+            let nearbyEnemies = enemyShips.filter(e => this.pos.dist(e.pos) < this.detectionRange);
+            if (nearbyEnemies.length > 0 && !this.commandOverride) {
+                validTargets = nearbyEnemies;
+            }
+        }
+
+        if (validTargets.length === 0) { this.target = null; return; }
+
+        // Aggro Lock check
+        if (this.target && this.targetLockTimer > 0 && validTargets.includes(this.target)) {
+            return; // Maintain current lock
+        }
+
+        let bestTarget = null; 
+        let bestScore = -Infinity;
+        let myMS = entities.find(e => e.type === 'MotherShip' && e.faction.id === this.faction.id);
+
+        // Track how many allies are already targeting things to prevent overkill
+        let targetingCounts = new Map();
+        entities.forEach(ally => {
+            if (ally.faction.id === this.faction.id && ally.target) {
+                targetingCounts.set(ally.target.id, (targetingCounts.get(ally.target.id) || 0) + 1);
+            }
+        });
+
+        for (let e of validTargets) {
+            let distToMe = this.pos.dist(e.pos);
+            if (movingOverride && distToMe > this.detectionRange) continue; 
+            
+            let score = 0; 
+            
+            if (this.shipClass !== 'Support') {
+                let isAttackingMS = (e.target && e.target.type === 'MotherShip' && e.target.faction.id === this.faction.id);
+                if (isAttackingMS) score += 500; // MUST protect carrier
+                
+                score -= distToMe * 0.5; 
+                score -= e.hp * 0.2; 
+                score += (e.dmg || 0) * 2; 
+
+                // Overkill penalty
+                let tCount = targetingCounts.get(e.id) || 0;
+                if (e.hp < tCount * 30 && (!this.commandOverride || this.commandOverride.target !== e)) {
+                    score -= 1000;
+                }
+
+                switch (this.personality) {
+                    case 'Aggressor': score += (e.dmg || 0) * 3; break;
+                    case 'Hunter': if (e.shipClass==='Support'||e.shipClass==='Siege') score += 100; break;
+                    case 'Guardian': if (myMS) { let d = e.pos.dist(myMS.pos); score -= d * 0.8; if (d < myMS.auraRadius) score += 300; } break;
+                    case 'Flanker': score += distToMe * 0.1; break; 
+                }
+            } else {
+                score += (e.maxHp - e.hp); 
+            }
+            if (this.target === e) score += 50; // Stickiness
+            if (score > bestScore) { bestScore = score; bestTarget = e; }
+        }
+
+        if (bestTarget !== this.target) {
+            this.target = bestTarget;
+            if (this.target && !movingOverride) this.targetLockTimer = randomRange(180, 300); // 3-5 sec lock
+        }
+    }
+
+    maneuverAroundTarget() {
+        if (!this.target) return;
+        let dist = this.pos.dist(this.target.pos);
+        let desiredRange = this.baseRange * 0.8;
+        
+        if (this.state === 'EngageEnemy') {
+            // STOP forward movement and engage
+            if (dist < desiredRange) {
+                this.vel.mult(0.85); // Brake hard!
+            } else {
+                this.applyForce(this.seek(this.target.pos).mult(0.5)); // Approach slowly
+            }
+            
+            // Flankers still orbit slightly
+            if (this.personality === 'Flanker') {
+                let ang = Math.atan2(this.target.pos.y - this.pos.y, this.target.pos.x - this.pos.x);
+                let fForce = new Vector(Math.cos(ang + Math.PI/2), Math.sin(ang + Math.PI/2)).mult(this.maxSpeed * 0.8);
+                let steer = fForce.sub(this.vel);
+                steer.x = Math.max(-this.maxForce, Math.min(this.maxForce, steer.x)); steer.y = Math.max(-this.maxForce, Math.min(this.maxForce, steer.y));
+                this.applyForce(steer);
+            }
+        } else if (this.state === 'PursueEnemy' || this.state === 'AttackMotherShip') {
+            if (dist > desiredRange) this.applyForce(this.seek(this.target.pos));
+            else this.vel.mult(0.85);
+        }
+        
+        if (this.personality === 'Guardian' && !this.commandOverride) {
+            let myMS = entities.find(e => e.type === 'MotherShip' && e.faction.id === this.faction.id);
+            if (myMS && this.pos.dist(myMS.pos) > myMS.auraRadius * 1.2) this.applyForce(this.seek(myMS.pos).mult(2.0));
+        }
+    }
+
+    seek(targetVec) {
+        let desired = new Vector(targetVec.x - this.pos.x, targetVec.y - this.pos.y);
+        desired.normalize(); desired.mult(this.maxSpeed);
+        let steer = desired.sub(this.vel);
+        steer.x = Math.max(-this.maxForce, Math.min(this.maxForce, steer.x)); steer.y = Math.max(-this.maxForce, Math.min(this.maxForce, steer.y));
+        return steer;
+    }
+
+    separate(vehicles) {
+        let steer = new Vector(0, 0); let count = 0;
+        for (let other of vehicles) {
+            let d = this.pos.dist(other.pos);
+            if ((d > 0) && (d < this.radius * 2.5) && !other.isDead) {
+                let diff = new Vector(this.pos.x - other.pos.x, this.pos.y - other.pos.y);
+                diff.normalize(); diff.mult(1 / d); steer.add(diff); count++;
+            }
+        }
+        if (count > 0) { steer.x /= count; steer.y /= count; }
+        if (steer.mag() > 0) {
+            steer.normalize(); steer.mult(this.maxSpeed); steer.sub(this.vel);
+            steer.x = Math.max(-this.maxForce*1.5, Math.min(this.maxForce*1.5, steer.x)); steer.y = Math.max(-this.maxForce*1.5, Math.min(this.maxForce*1.5, steer.y));
+        }
+        return steer;
+    }
+
+    avoidObstacles(obsList) {
+        let steer = new Vector(0, 0); let lookAheadDist = 60 + this.vel.mag() * 15; 
+        for (let o of obsList) {
+            let dist = this.pos.dist(o.pos);
+            if (dist < o.radius + this.radius + lookAheadDist) {
+                let toObs = new Vector(o.pos.x - this.pos.x, o.pos.y - this.pos.y);
+                let heading = this.vel.copy().normalize(); if(heading.mag() === 0) heading = new Vector(Math.cos(this.angle), Math.sin(this.angle));
+                let dot = toObs.x * heading.x + toObs.y * heading.y;
+                if (dot > 0) { 
+                    let projPos = new Vector(this.pos.x + heading.x * dot, this.pos.y + heading.y * dot);
+                    if (projPos.dist(o.pos) < o.radius + this.radius * 1.5) {
+                        let t1 = new Vector(-toObs.y, toObs.x).normalize(); let t2 = new Vector(toObs.y, -toObs.x).normalize();
+                        let refDir = this.target ? new Vector(this.target.pos.x-this.pos.x, this.target.pos.y-this.pos.y).normalize() : heading;
+                        let chosenT = (t1.x*refDir.x + t1.y*refDir.y) > (t2.x*refDir.x + t2.y*refDir.y) ? t1 : t2;
+                        let forceMag = this.maxSpeed * Math.max(0.5, (1 - (dist - o.radius - this.radius) / lookAheadDist));
+                        steer.add(chosenT.mult(forceMag * 2)); 
+                        let away = new Vector(this.pos.x - o.pos.x, this.pos.y - o.pos.y).normalize(); steer.add(away.mult(forceMag));
+                    }
+                }
+            }
+        }
+        if (steer.mag() > 0) {
+            steer.normalize().mult(this.maxSpeed); steer.sub(this.vel);
+            steer.x = Math.max(-this.maxForce*4, Math.min(this.maxForce*4, steer.x)); steer.y = Math.max(-this.maxForce*4, Math.min(this.maxForce*4, steer.y));
+        }
+        return steer;
+    }
+
+    draw(ctx, isMenu=false) {
+        if (this.isDead) return;
+        let rad = this.radius; 
+        
+        let strokeColor = currentTheme === 'oasis' ? '#ffffff' : '#1a1817';
+        let baseColor = currentTheme === 'oasis' ? '#110033' : '#e6ddc5';
+        
+        ctx.save(); ctx.translate(this.pos.x, this.pos.y); ctx.rotate(this.angle);
+
+        // Drawing overrides / selection
+        if (this.selected && !isMenu) {
+            ctx.beginPath(); ctx.arc(0, 0, rad + 12, 0, Math.PI * 2); ctx.strokeStyle = strokeColor; ctx.lineWidth = 1; ctx.setLineDash([4, 4]); ctx.stroke(); ctx.setLineDash([]);
+        }
+        if (this.selected && this.commandOverride && !isMenu) {
+            ctx.rotate(-this.angle); ctx.beginPath(); ctx.moveTo(0, 0);
+            if (this.commandOverride.type === 'move') { ctx.lineTo(this.commandOverride.pos.x - this.pos.x, this.commandOverride.pos.y - this.pos.y); ctx.strokeStyle = currentTheme === 'oasis' ? 'rgba(255,255,255,0.4)' : 'rgba(26,24,23,0.3)'; ctx.lineWidth=3; ctx.stroke(); } 
+            else if (this.commandOverride.type === 'attack' && this.commandOverride.target) { ctx.lineTo(this.commandOverride.target.pos.x - this.pos.x, this.commandOverride.target.pos.y - this.pos.y); ctx.strokeStyle = 'rgba(139,43,43,0.6)'; ctx.lineWidth=3; ctx.stroke(); }
+            ctx.rotate(this.angle);
+        }
+        if (this.shieldTimer > 0) { ctx.beginPath(); ctx.arc(0, 0, rad + 5, 0, Math.PI*2); ctx.strokeStyle = '#e6ddc5'; ctx.lineWidth=3; ctx.stroke(); }
+
+        // Drop shadow
+        ctx.save(); ctx.translate(15, 15); ctx.fillStyle = 'rgba(0,0,0,0.5)';
+        ctx.beginPath(); ctx.moveTo(this.pBase[0].x, this.pBase[0].y); for(let p of this.pBase) ctx.lineTo(p.x, p.y); ctx.fill();
+        ctx.restore();
+
+        // Engine Fire (only if moving)
+        if (this.vel.mag() > 0.5 && !isMenu) {
+            drawEngineFlame(ctx, -rad, 0, rad, rad*2, this.id);
+            if(this.shipClass === 'Frigate') drawEngineFlame(ctx, -rad*0.8, rad*0.4, rad*0.8, rad*1.5, this.id+1);
+            if(this.shipClass === 'Interceptor') { drawEngineFlame(ctx, -rad, -rad*0.3, rad*0.5, rad, this.id+2); drawEngineFlame(ctx, -rad, rad*0.3, rad*0.5, rad, this.id+3); }
+        }
+
+        // Draw Plates
+        let isDamaged = this.hp < this.maxHp * 0.5;
+        
+        // Base Hull
+        drawIrregularPlate(ctx, this.pBase, baseColor, strokeColor, 0, !isDamaged);
+        
+        // Siege Legs (Spindly mechanical legs requested)
+        if (this.shipClass === 'Siege') {
+            ctx.strokeStyle = strokeColor; ctx.lineWidth = 3;
+            // Left leg
+            ctx.beginPath(); ctx.moveTo(0, -rad*0.5); ctx.lineTo(-rad, -rad*1.5); ctx.lineTo(0, -rad*2); ctx.stroke();
+            // Right leg
+            ctx.beginPath(); ctx.moveTo(0, rad*0.5); ctx.lineTo(-rad, rad*1.5); ctx.lineTo(0, rad*2); ctx.stroke();
+        }
+
+        // Color Accent Plate (don't draw if heavily damaged to simulate missing chunk)
+        if (!isDamaged || Math.random() > 0.1) {
+            if(this.pColor && this.pColor.length > 0) drawIrregularPlate(ctx, this.pColor, this.faction.color, strokeColor, 0);
+        } else {
+            // Draw scorch mark instead
+            ctx.fillStyle = '#000'; ctx.beginPath(); ctx.arc(0,0, rad*0.5, 0, Math.PI*2); ctx.fill();
+        }
+
+        // Secondary Accent Plate
+        if (this.pAccent && this.pAccent.length > 0) {
+            drawIrregularPlate(ctx, this.pAccent, currentTheme==='oasis'?'#ccff00':'#b5a895', strokeColor, 0);
+        }
+
+        // Specialized Components
+        if (this.shipClass === 'Support') {
+            // Rotating Radar
+            drawGear(ctx, -rad*0.2, 0, rad*0.4, 6, this.gearRot, baseColor, strokeColor);
+            // Glowing vat
+            ctx.fillStyle = currentTheme==='oasis' ? '#00ffcc' : '#00ff00';
+            ctx.beginPath(); ctx.arc(rad*0.3, 0, rad*0.2, 0, Math.PI*2); ctx.fill(); ctx.stroke();
+        } else if (this.shipClass === 'Destroyer') {
+            // Dual turrets
+            let tAng = this.target ? Math.atan2(this.target.pos.y - this.pos.y, this.target.pos.x - this.pos.x) - this.angle : 0;
+            ctx.save(); ctx.translate(rad*0.2, -rad*0.3); ctx.rotate(tAng);
+            ctx.fillStyle = strokeColor; ctx.fillRect(0, -2, rad*0.6, 4); ctx.beginPath(); ctx.arc(0,0, rad*0.2, 0, Math.PI*2); ctx.fill();
+            ctx.restore();
+            ctx.save(); ctx.translate(rad*0.2, rad*0.3); ctx.rotate(tAng);
+            ctx.fillStyle = strokeColor; ctx.fillRect(0, -2, rad*0.6, 4); ctx.beginPath(); ctx.arc(0,0, rad*0.2, 0, Math.PI*2); ctx.fill();
+            ctx.restore();
+        } else {
+            // Cockpit glow
+            ctx.fillStyle = currentTheme==='oasis' ? '#00ffff' : '#111';
+            ctx.beginPath(); ctx.arc(rad*0.2, 0, rad*0.15, 0, Math.PI*2); ctx.fill();
+        }
+
+        ctx.restore();
+        
+        if ((this.hp < this.maxHp || this.selected) && !isMenu) {
+            ctx.fillStyle = '#1a1817'; ctx.fillRect(this.pos.x - 15, this.pos.y + rad + 10, 30, 6);
+            ctx.fillStyle = this.state === 'fleeing' ? '#ffd700' : this.faction.light;
+            ctx.fillRect(this.pos.x - 14, this.pos.y + rad + 11, 28 * (this.hp / this.maxHp), 4);
+        }
+    }
+}
+
+class Laser {
+    constructor(x, y, targetPos, color, damage, isPlayer, ownerId) {
+        this.pos = new Vector(x, y); this.vel = new Vector(targetPos.x - x, targetPos.y - y).normalize().mult(25);
+        this.color = color; this.damage = damage; this.isPlayer = isPlayer; this.ownerId = ownerId; this.life = 100;
+        playSound('shoot', this.pos.dist(camera));
+    }
+    update() {
+        this.pos.add(this.vel.copy().mult(timeScale)); this.life -= timeScale;
+        for (let e of entities) {
+            if (e.isDead || e.faction.id === (this.isPlayer ? 1 : 2)) continue;
+            if (this.pos.dist(e.pos) < e.radius + 15) {
+                e.takeDamage(this.damage); createExplosion(this.pos.x, this.pos.y, currentTheme==='oasis'?'#ffea00':'#ffd700', 5, 4); playSound('hit', this.pos.dist(camera));
+                this.life = 0; return;
+            }
+        }
+        for (let o of obstacles) { if (this.pos.dist(o.pos) < o.radius) { createExplosion(this.pos.x, this.pos.y, '#888', 3, 3); this.life = 0; return; } }
+    }
+    draw(ctx) {
+        ctx.strokeStyle = this.color; 
+        ctx.lineWidth = currentTheme === 'oasis' ? 6 : 4;
+        let tailX = this.pos.x - this.vel.x * (currentTheme === 'oasis' ? 2 : 1.5); 
+        let tailY = this.pos.y - this.vel.y * (currentTheme === 'oasis' ? 2 : 1.5);
+        
+        ctx.beginPath(); ctx.moveTo(this.pos.x, this.pos.y); ctx.lineTo(tailX, tailY); ctx.stroke();
+        
+        if (currentTheme === 'oasis') {
+            ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 2;
+            ctx.beginPath(); ctx.moveTo(this.pos.x, this.pos.y); ctx.lineTo(tailX, tailY); ctx.stroke();
+        }
+    }
+}
+
+class Particle {
+    constructor(x, y, color, speed, life, size) {
+        this.pos = new Vector(x, y); const angle = Math.random() * Math.PI * 2;
+        this.vel = new Vector(Math.cos(angle), Math.sin(angle)).mult(randomRange(speed*0.2, speed));
+        this.color = color; this.life = life; this.maxLife = life; this.size = size; this.friction = 0.95;
+    }
+    update() { this.vel.mult(this.friction); this.pos.add(this.vel.copy().mult(timeScale)); this.life -= timeScale; }
+    draw(ctx) { ctx.fillStyle = this.color; ctx.globalAlpha = Math.max(0, this.life / this.maxLife); ctx.fillRect(this.pos.x, this.pos.y, this.size, this.size); ctx.globalAlpha = 1; }
+}
+
+// --- LOGIC ---
+function buildAIFleet(centerX, MSY, faction, style, customPts) {
+    let classes = Object.keys(SHIP_CLASSES);
+    let pts = customPts || (200 * skirmishConfig.difficulty);
+    let spawned = 0;
+    while(pts > 10 && spawned < 5) {
+        let cls = classes[Math.floor(Math.random()*classes.length)];
+        if (style === 'Overwhelmer' && Math.random() < 0.6) cls = 'Interceptor';
+        if (style === 'Turtle' && Math.random() < 0.4) cls = 'Support';
+        
+        let c = SHIP_CLASSES[cls].cost;
+        if(pts >= c) {
+            entities.push(new Ship(centerX + randomRange(-300, 300), MSY + randomRange(-100, 100), faction, cls));
+            pts -= c; spawned++;
+        }
+    }
+}
+
+function initGame() {
+    entities = []; particles = []; lasers = []; obstacles = []; capturePoints = [];
+    playerEnergy = 10; timeScale = 1.0; cinematicTimer = 0;
+    matchStats = { startTime: Date.now(), kills: 0, lost: 0 };
+    
+    let cBanner = document.getElementById('cinematic-banner');
+    if (cBanner) cBanner.classList.remove('show');
+    
+    let flName = document.getElementById('hud-fleet-name'); if (flName) flName.innerText = profileData.fleetName;
+    let hudCond = document.getElementById('hud-condition'); if (hudCond) hudCond.innerText = activeCondition.name === 'Clear Skies' ? '' : `WARNING: ${activeCondition.name} ACTIVE`;
+    
+    camera = { x: currentWorldSize/2, y: currentWorldSize - 600, zoom: 0.8 };
+
+    if (skirmishConfig.hazards) {
+        for(let i=0; i<currentWorldSize/200; i++) obstacles.push(new Obstacle(Math.random() * currentWorldSize, Math.random() * currentWorldSize, randomRange(40, 90), 'asteroid'));
+        for(let i=0; i<3; i++) capturePoints.push(new CapturePoint(randomRange(1000, currentWorldSize-1000), randomRange(1000, currentWorldSize-1000), 'refinery'));
+    }
+
+    const centerX = currentWorldSize / 2; const playerMSY = currentWorldSize - 400; const enemyMSY = 400;
+
+    let playerMS = new MotherShip(centerX, playerMSY, getPlayerFaction()); entities.push(playerMS);
+    
+    for(let e=0; e<skirmishConfig.enemies; e++) {
+        let eX = centerX + (e - (skirmishConfig.enemies-1)/2) * 1200;
+        let enemyMS = new MotherShip(eX, enemyMSY, getEnemyFaction()); entities.push(enemyMS);
+        buildAIFleet(eX, enemyMSY, getEnemyFaction(), skirmishConfig.aiProfile);
+    }
+
+    for (let cls in profileData.fleetBuild) {
+        for(let i=0; i<profileData.fleetBuild[cls]; i++) {
+            entities.push(new Ship(centerX + randomRange(-300, 300), playerMSY + randomRange(-150, 50), getPlayerFaction(), cls));
+        }
+    }
+    
+    setupAbilitiesUI();
+    switchMenu('none');
+}
+
+function setupAbilitiesUI() {
+    let tree = profileData.commanderTree;
+    let b1 = document.getElementById('btn-abil-1'); let b2 = document.getElementById('btn-abil-2'); let b3 = document.getElementById('btn-abil-3');
+    if (!b1 || !b2 || !b3) return;
+    if (tree === 'Tactical') { b1.innerText = "Radar Sweep (30 KW)"; b2.innerText = "Flank Speed (50 KW)"; b3.innerText = "EMP Blast (70 KW)"; } 
+    else if (tree === 'Offensive') { b1.innerText = "Focus Fire (40 KW)"; b2.innerText = "Overcharge (60 KW)"; b3.innerText = "Rapid Reinforce (80 KW)"; } 
+    else { b1.innerText = "Repair Burst (40 KW)"; b2.innerText = "Armor Lock (60 KW)"; b3.innerText = "Shield Wall (90 KW)"; }
+}
+
+function useAbility(slot) {
+    let tree = profileData.commanderTree; let pMS = entities.find(e => e.type === 'MotherShip' && e.faction.id === 1);
+    if (!pMS || pMS.isDead) return;
+
+    let cost = 0; let action = '';
+    if (slot === 4) {
+        cost = 60; action = 'spawn_fleet';
+    } else {
+        if (tree === 'Tactical') { cost = slot===1?30 : slot===2?50 : 70; action = slot===1?'radar' : slot===2?'speed' : 'emp'; }
+        else if (tree === 'Offensive') { cost = slot===1?40 : slot===2?60 : 80; action = slot===1?'focus' : slot===2?'dmg' : 'spawn'; }
+        else { cost = slot===1?40 : slot===2?60 : 90; action = slot===1?'heal' : slot===2?'armor' : 'shield'; }
+    }
+
+    if (playerEnergy < cost) return;
+    playerEnergy -= cost;
+
+    if (action === 'emp') {
+        createExplosion(pMS.pos.x, pMS.pos.y, '#fff', 50, 20);
+        entities.forEach(e => { if (e.faction.id !== 1 && !e.isDead && e.pos.dist(pMS.pos) < 1000) e.disabledTimer = 300; });
+    } else if (action === 'armor') {
+        entities.forEach(e => { if (e.faction.id === 1 && !e.isDead) e.shieldTimer = 300; });
+    } else if (action === 'spawn') {
+        for(let i=0; i<3; i++) entities.push(new Ship(pMS.pos.x+randomRange(-100,100), pMS.pos.y+randomRange(-100,100), getPlayerFaction(), 'Interceptor'));
+    } else if (action === 'spawn_fleet') {
+        for(let i=0; i<3; i++) {
+            let cl = Math.random() > 0.5 ? 'Frigate' : 'Destroyer';
+            entities.push(new Ship(pMS.pos.x+randomRange(-150,150), pMS.pos.y+randomRange(-150,150), getPlayerFaction(), cl));
+        }
+        showNotification("Reinforcements Deployed");
+        updateFleetUI();
+    } else if (action === 'heal') {
+        createExplosion(pMS.pos.x, pMS.pos.y, '#0f0', 30, 10);
+        entities.forEach(e => { if (e.faction.id === 1 && !e.isDead) e.hp = Math.min(e.maxHp, e.hp + 50); });
+    } else if (action === 'radar') {
+        showNotification("Radar active");
+    } else if (action === 'speed') {
+        entities.forEach(e => { if (e.faction.id === 1 && !e.isDead) e.vel.mult(2.0); });
+    } else {
+        showNotification("Ability deployed");
+    }
+}
+
+function createExplosion(x, y, color, amount, size) { for (let i = 0; i < amount; i++) particles.push(new Particle(x, y, color, randomRange(2, 10), randomRange(15, 40), randomRange(2, size))); }
+
+function applySelection() {
+    let minX = Math.min(selectionBox.startX, mouse.worldX); let maxX = Math.max(selectionBox.startX, mouse.worldX);
+    let minY = Math.min(selectionBox.startY, mouse.worldY); let maxY = Math.max(selectionBox.startY, mouse.worldY);
+    let clicked = null; let clickMode = (minX === maxX && minY === maxY);
+    entities.forEach(e => {
+        if (e.faction.id === 1 && e.type === 'Ship' && !e.isDead) {
+            e.selected = false; 
+            if (clickMode) { if (e.pos.dist(new Vector(mouse.worldX, mouse.worldY)) < e.radius + 15) clicked = e; } 
+            else { if (e.pos.x > minX && e.pos.x < maxX && e.pos.y > minY && e.pos.y < maxY) e.selected = true; }
+        }
+    });
+    if (clicked) clicked.selected = true;
+    updateFleetUI();
+}
+
+function handleRightClick(x, y) {
+    let target = null;
+    for (let e of entities) { if (e.faction.id !== 1 && !e.isDead && e.pos.dist(new Vector(x, y)) < e.radius + 20) { target = e; break; } }
+    let offset = 0;
+    entities.forEach(e => {
+        if (e.faction.id === 1 && e.selected && !e.isDead) {
+            if (target) { e.commandOverride = { type: 'attack', target: target }; createExplosion(e.pos.x, e.pos.y, '#fff', 2, 2); } 
+            else { let tx = x + (offset * 30); e.commandOverride = { type: 'move', pos: new Vector(tx, y) }; offset = offset > 0 ? -offset : -offset + 1; createExplosion(tx, y, '#e6ddc5', 3, 3); }
+        }
+    });
+}
+
+function commandSelected(type) {
+    let pMS = entities.find(e => e.type === 'MotherShip' && e.faction.id === 1);
+    let eMS = entities.find(e => e.type === 'MotherShip' && e.faction.id === 2);
+    let hasSel = entities.some(e => e.selected && e.faction.id === 1);
+    entities.forEach(e => {
+        if (e.faction.id === 1 && e.type === 'Ship' && !e.isDead && (!hasSel || e.selected)) {
+            if (type === 'defend' && pMS) e.commandOverride = { type: 'move', pos: new Vector(pMS.pos.x + randomRange(-200, 200), pMS.pos.y + randomRange(-200, 200)) };
+            else if (type === 'assault' && eMS) e.commandOverride = { type: 'attack', target: eMS };
+            else if (type === 'retreat') e.commandOverride = { type: 'move', pos: new Vector(e.pos.x, currentWorldSize - 200) };
+        }
+    });
+}
+
+function updateUI() {
+    let pMS = entities.find(e => e.type === 'MotherShip' && e.faction.id === 1);
+    let eMSList = entities.filter(e => e.type === 'MotherShip' && e.faction.id === 2);
+    
+    let phpHp = document.getElementById('player-ms-hp'); if (phpHp && pMS) phpHp.style.width = Math.max(0, (pMS.hp / pMS.maxHp) * 100) + '%';
+    
+    let ehp = document.getElementById('enemy-ms-hp');
+    if (ehp) {
+        if (eMSList.length > 0) {
+            let tHp = 0, tMax = 0; eMSList.forEach(m => { tHp += m.hp; tMax += m.maxHp; });
+            ehp.style.width = Math.max(0, (tHp / tMax) * 100) + '%';
+            ehp.style.background = currentTheme === 'oasis' ? '#ff007f' : '#8b2b2b';
+        } else { ehp.style.width = '0%'; }
+    }
+
+    if (gameState === 'playing') {
+        let energyRate = 12 + (matchStats.kills * 2); // Energy speeds up with kills!
+        playerEnergy = Math.min(MAX_ENERGY, playerEnergy + (energyRate / 60) * timeScale);
+    }
+    
+    let deg = -120 + (playerEnergy / MAX_ENERGY) * 240; 
+    let needle = document.getElementById('energy-needle'); if(needle) needle.style.transform = `translateX(-50%) rotate(${deg}deg)`;
+    let eText = document.getElementById('energy-text'); if(eText) eText.innerText = Math.floor(playerEnergy);
+
+    let enReady = playerEnergy; let t = profileData.commanderTree;
+    let btn1 = document.getElementById('btn-abil-1'); if(btn1) btn1.disabled = enReady < (t==='Tactical'?30:40) || !pMS || pMS.isDead;
+    let btn2 = document.getElementById('btn-abil-2'); if(btn2) btn2.disabled = enReady < (t==='Tactical'?50:60) || !pMS || pMS.isDead;
+    let btn3 = document.getElementById('btn-abil-3'); if(btn3) btn3.disabled = enReady < (t==='Tactical'?70:(t==='Offensive'?80:90)) || !pMS || pMS.isDead;
+    let btnSpawn = document.getElementById('btn-spawn-fleet'); if(btnSpawn) btnSpawn.disabled = enReady < 60 || !pMS || pMS.isDead;
+    
+    if (frameCount % 10 === 0) updateFleetUI(); 
+    if (frameCount % 5 === 0) drawMinimap();
+}
+
+function updateFleetUI() {
+    const list = document.getElementById('fleet-list');
+    if (!list) return;
+    let ships = entities.filter(e => e.faction.id === 1 && e.type === 'Ship' && !e.isDead);
+    let html = '';
+    ships.forEach(s => {
+        let hpColor = s.hp > s.maxHp*0.6 ? 'text-green-700' : (s.hp > s.maxHp*0.3 ? 'text-yellow-700' : 'text-red-700');
+        let selBg = s.selected ? 'bg-black bg-opacity-20' : '';
+        let targetText = s.state;
+        if (s.state === 'Fleeing') targetText = 'RETREATING!';
+        html += `<div class="border-b border-gray-400 pb-1 mb-1 ${selBg}">
+            <div class="flex justify-between"><span>${s.shipClass.substring(0,3).toUpperCase()}-${s.id.substring(0,3)}</span><span class="${hpColor}">${Math.floor(s.hp)} HP</span></div>
+            <div class="text-[10px] text-gray-700 font-normal">${targetText}</div>
+        </div>`;
+    });
+    list.innerHTML = html || '<div class="text-center mt-4 text-gray-500">No active vessels.</div>';
+}
+
+function drawMinimap() {
+    mmCtx.fillStyle = currentTheme === 'oasis' ? '#0a4066' : '#e6ddc5'; mmCtx.fillRect(0, 0, 200, 200);
+    let scale = 200 / currentWorldSize;
+    let vx = (camera.x - width/2/camera.zoom) * scale; let vy = (camera.y - height/2/camera.zoom) * scale;
+    let vw = (width / camera.zoom) * scale; let vh = (height / camera.zoom) * scale;
+    mmCtx.strokeStyle = 'rgba(255,255,255,0.5)'; mmCtx.strokeRect(vx, vy, vw, vh);
+    capturePoints.forEach(c => {
+        mmCtx.fillStyle = c.owner===1 ? profileData.colorAccent : (c.owner===2 ? (currentTheme==='oasis'?'#ff007f':'#8b2b2b') : '#fff');
+        mmCtx.fillRect(c.pos.x*scale - 2, c.pos.y*scale - 2, 4, 4);
+    });
+    entities.forEach(e => {
+        if(e.isDead) return;
+        mmCtx.fillStyle = e.faction.id === 1 ? profileData.colorAccent : (currentTheme==='oasis'?'#ff007f':'#8b2b2b');
+        let size = e.type === 'MotherShip' ? 4 : 2;
+        mmCtx.beginPath(); mmCtx.arc(e.pos.x * scale, e.pos.y * scale, size, 0, Math.PI*2); mmCtx.fill();
+    });
+}
+
+function drawFogOfWar() {
+    if (activeCondition.id !== 'SolarFlare') return; 
+    if(!fogCanvas) { fogCanvas = document.createElement('canvas'); fogCtx = fogCanvas.getContext('2d'); }
+    if(fogCanvas.width !== width || fogCanvas.height !== height) { fogCanvas.width = width; fogCanvas.height = height; }
+    
+    fogCtx.globalCompositeOperation = 'source-over';
+    fogCtx.fillStyle = currentTheme === 'oasis' ? 'rgba(0, 50, 100, 0.95)' : 'rgba(26, 24, 23, 0.9)'; fogCtx.fillRect(0,0,width,height);
+    
+    fogCtx.globalCompositeOperation = 'destination-out';
+    entities.forEach(e => {
+        if (e.faction.id === 1 && !e.isDead) {
+            let sx = (e.pos.x - camera.x) * camera.zoom + width/2; let sy = (e.pos.y - camera.y) * camera.zoom + height/2;
+            let rad = (e.type === 'MotherShip' ? 1200 : 600) * camera.zoom;
+            if(sx < -rad || sx > width+rad || sy < -rad || sy > height+rad) return;
+            let grad = fogCtx.createRadialGradient(sx, sy, 0, sx, sy, rad);
+            grad.addColorStop(0, 'rgba(0,0,0,1)'); grad.addColorStop(0.5, 'rgba(0,0,0,0.8)'); grad.addColorStop(1, 'rgba(0,0,0,0)');
+            fogCtx.fillStyle = grad; fogCtx.beginPath(); fogCtx.arc(sx, sy, rad, 0, Math.PI*2); fogCtx.fill();
+        }
+    });
+    ctx.setTransform(1,0,0,1,0,0);
+    ctx.drawImage(fogCanvas, 0, 0);
+}
+
+function endGame(playerWon, forceExit=false) {
+    if (gameState !== 'playing') return;
+    gameState = 'over'; clearSave(); 
+    
+    let pMS = entities.find(e => e.type === 'MotherShip' && e.faction.id === 1);
+    
+    if(playerWon && !forceExit) { profileData.wins++; checkAchievements(true, pMS); }
+    saveProfile();
+
+    let duration = Math.floor((Date.now() - matchStats.startTime)/1000);
+    let m = Math.floor(duration/60); let s = duration%60;
+    
+    let aTitle = document.getElementById('aar-title'); if(aTitle) aTitle.innerText = forceExit ? "RETREAT RECORDED" : (playerWon ? "VICTORY ACHIEVED" : "DEFEAT SUFFERED");
+    let aTime = document.getElementById('aar-time'); if(aTime) aTime.innerText = `${m}:${s<10?'0':''}${s}`;
+    let aKills = document.getElementById('aar-kills'); if(aKills) aKills.innerText = matchStats.kills;
+    let aLost = document.getElementById('aar-lost'); if(aLost) aLost.innerText = matchStats.lost;
+    let aXp = document.getElementById('aar-xp'); if(aXp) aXp.innerText = forceExit ? 0 : (matchStats.kills * 10 + (playerWon?500:50));
+
+    setTimeout(() => {
+        let banner = document.getElementById('cinematic-banner'); if(banner) banner.classList.remove('show');
+        timeScale = 1.0;
+        cinematicTimer = 0;
+        let aar = document.getElementById('menu-aar'); if(aar) aar.classList.add('active');
+        let mCont = document.getElementById('menus-container'); if(mCont) mCont.style.display = 'flex';
+        let gUi = document.getElementById('game-ui'); if(gUi) gUi.style.display = 'none';
+        let pUi = document.getElementById('pause-ui'); if(pUi) pUi.style.display = 'none';
+    }, forceExit ? 0 : 1500);
+}
+
+// --- RENDERING ---
+function drawGridLayer(ctxTarget, viewSize, isMenu=false) {
+    if (currentTheme === 'oasis') {
+        ctxTarget.fillStyle = '#0f8cff';
+        if(!isMenu) ctxTarget.fillRect(-2000, -2000, viewSize+4000, viewSize+4000);
+        else ctxTarget.fillRect(0, 0, width, height);
+        
+        ctxTarget.fillStyle = '#ff0055'; ctxTarget.fillRect(viewSize*0.1, viewSize*0.2, 600, 1200);
+        ctxTarget.fillStyle = '#ccff00'; ctxTarget.beginPath(); ctxTarget.arc(viewSize*0.8, viewSize*0.8, 800, 0, Math.PI*2); ctxTarget.fill();
+        ctxTarget.fillStyle = 'rgba(255, 255, 255, 0.9)'; ctxTarget.font = "bold 600px 'Special Elite'"; ctxTarget.fillText("C N X", viewSize*0.2, viewSize*0.5);
+        
+        ctxTarget.strokeStyle = 'rgba(255, 255, 255, 0.3)'; ctxTarget.lineWidth = 4; ctxTarget.beginPath();
+        for (let x = 0; x <= viewSize; x += 400) { ctxTarget.moveTo(x, 0); ctxTarget.lineTo(x, viewSize); }
+        for (let y = 0; y <= viewSize; y += 400) { ctxTarget.moveTo(0, y); ctxTarget.lineTo(viewSize, y); }
+        ctxTarget.stroke();
+    } else {
+        if(!isMenu) { ctxTarget.fillStyle = '#f4f1eb'; ctxTarget.fillRect(-2000, -2000, viewSize+4000, viewSize+4000); }
+        else { ctxTarget.fillStyle = '#f4f1eb'; ctxTarget.fillRect(0, 0, width, height); }
+
+        ctxTarget.strokeStyle = 'rgba(26, 24, 23, 0.08)'; ctxTarget.lineWidth = 2; ctxTarget.beginPath();
+        for (let x = 0; x <= viewSize; x += 250) { ctxTarget.moveTo(x, 0); ctxTarget.lineTo(x, viewSize); }
+        for (let y = 0; y <= viewSize; y += 250) { ctxTarget.moveTo(0, y); ctxTarget.lineTo(viewSize, y); }
+        ctxTarget.stroke();
+        
+        ctxTarget.strokeStyle = 'rgba(26, 24, 23, 0.3)'; ctxTarget.beginPath();
+        for (let x = 250; x < viewSize; x += 250) {
+            for (let y = 250; y < viewSize; y += 250) { ctxTarget.moveTo(x-10, y); ctxTarget.lineTo(x+10, y); ctxTarget.moveTo(x, y-10); ctxTarget.lineTo(x, y+10); }
+        }
+        ctxTarget.stroke();
+    }
+}
+
+function initMenuBackground() {
+    menuEntities = []; menuEntities.push(new MotherShip(width/2, height/2, {id:0, color:'#555', light:'#888'})); menuEntities[0].angle = Math.PI / 4;
+    for(let i=0; i<15; i++) { let o = new Obstacle(randomRange(0, width), randomRange(0, height), randomRange(20, 60), 'asteroid'); o.rotSpeed = randomRange(-0.02, 0.02); menuEntities.push(o); }
+}
+
+function drawMenuBackground() {
+    drawGridLayer(ctx, Math.max(width, height), true);
+    menuEntities.forEach(e => {
+        if (e.type === 'MotherShip') { e.pos.x = width/2 + Math.sin(frameCount * 0.005) * 50; e.pos.y = height/2 + Math.cos(frameCount * 0.005) * 50; e.angle += 0.001; e.draw(ctx, true); } 
+        else { e.pos.x += 0.5; e.pos.y += 0.2; if(e.pos.x > width + 100) e.pos.x = -100; if(e.pos.y > height + 100) e.pos.y = -100; e.draw(ctx, true); }
+    });
+}
+
+function drawCustomizationBackground() {
+    drawGridLayer(ctx, Math.max(width, height), true);
+    let tempShip = new Ship(width/2 - 150, height/2, {id:1, color: profileData.colorAccent, light:'#fff'}, 'Destroyer');
+    tempShip.radius = 80; tempShip.angle = frameCount * 0.01; tempShip.draw(ctx, true);
+}
+
+function gameLoop() {
+    frameCount++;
+    
+    if (gameState === 'menu' || gameState === 'skirmish' || gameState === 'profile' || gameState === 'aar' || gameState === 'settings') {
+        if (menuEntities.length === 0) initMenuBackground(); drawMenuBackground();
+    } else if (gameState === 'customize') {
+        let cc = document.getElementById('cust-color');
+        if (cc) profileData.colorAccent = cc.value; 
+        drawCustomizationBackground();
+    } else {
+        if(cinematicTimer > 0) { cinematicTimer--; if(cinematicTimer<=0) { timeScale = 1.0; } }
+
+        ctx.fillStyle = currentTheme === 'oasis' ? '#0f8cff' : '#f4f1eb'; ctx.fillRect(0, 0, width, height);
+        ctx.save(); ctx.translate(width/2, height/2); ctx.scale(camera.zoom, camera.zoom); ctx.translate(-camera.x, -camera.y);
+
+        if (gameState === 'playing' && timeScale === 1.0) {
+            let speed = 25 / camera.zoom;
+            if (keys['w']) camera.y -= speed; if (keys['s']) camera.y += speed;
+            if (keys['a']) camera.x -= speed; if (keys['d']) camera.x += speed;
+            camera.x = Math.max(-500, Math.min(currentWorldSize+500, camera.x)); camera.y = Math.max(-500, Math.min(currentWorldSize+500, camera.y));
+        }
+
+        drawGridLayer(ctx, currentWorldSize, false);
+
+        let updateLogic = (gameState === 'playing' || cinematicTimer > 0);
+
+        obstacles.forEach(o => o.draw(ctx));
+        capturePoints.forEach(c => { if(updateLogic) c.update(); c.draw(ctx); });
+        
+        for (let i = entities.length - 1; i >= 0; i--) {
+            let e = entities[i]; if (updateLogic) e.update(); e.draw(ctx);
+            if (e.isDead && e.type === 'Ship') entities.splice(i, 1);
+        }
+        for (let i = lasers.length - 1; i >= 0; i--) { let l = lasers[i]; if (updateLogic) l.update(); l.draw(ctx); if (l.life <= 0) lasers.splice(i, 1); }
+        for (let i = particles.length - 1; i >= 0; i--) { let p = particles[i]; if (updateLogic) p.update(); p.draw(ctx); if (p.life <= 0) particles.splice(i, 1); }
+
+        if (selectionBox.active && gameState === 'playing') {
+            ctx.fillStyle = currentTheme === 'oasis' ? 'rgba(255, 255, 255, 0.2)' : 'rgba(26, 24, 23, 0.1)';
+            ctx.strokeStyle = currentTheme === 'oasis' ? '#ffffff' : '#1a1817'; ctx.lineWidth = 2;
+            let x = Math.min(selectionBox.startX, mouse.worldX); let y = Math.min(selectionBox.startY, mouse.worldY);
+            let w = Math.abs(mouse.worldX - selectionBox.startX); let h = Math.abs(mouse.worldY - selectionBox.startY);
+            ctx.fillRect(x, y, w, h); ctx.strokeRect(x, y, w, h);
+        }
+        ctx.restore();
+        
+        if (gameState === 'playing' && timeScale === 1.0) drawFogOfWar();
+        if (gameState === 'playing') updateUI();
+    }
+
+    requestAnimationFrame(gameLoop);
+}
+
+loadProfile();
+gameLoop();
+</script>
+</body>
+</html>
