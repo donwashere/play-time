@@ -1605,55 +1605,40 @@ function checkWinConditions() {
     let playerShips = entities.filter(e => e.faction.id === 1 && e.type === 'Ship' && !e.isDead);
     let enemyShips = entities.filter(e => e.faction.id === 2 && e.type === 'Ship' && !e.isDead);
     
-    // Fleet Dominance: if one side has 15+ more active ships
-    let shipDiff = playerShips.length - enemyShips.length;
-    if (Math.abs(shipDiff) >= 15) {
-        let playerWon = shipDiff > 0;
-        let banner = document.getElementById('cinematic-banner');
-        if (banner) { banner.classList.add('show'); banner.innerText = 'FLEET DOMINANCE'; banner.style.color = playerWon ? profileData.colorAccent : (currentTheme === 'oasis' ? '#ff007f' : '#8b2b2b'); }
-        cinematicTimer = 90; timeScale = 0.2;
-        setTimeout(() => endGame(playerWon, false, 'Fleet Dominance Victory'), 3000);
-        return;
-    }
-    
-    // Both sides 0 ships: compare MS health
-    if (playerShips.length === 0 && enemyShips.length === 0) {
-        let pHp = pMS ? pMS.hp : 0;
-        let eHp = eMS ? eMS.hp : 0;
-        if (!pMS && !eMS) {
-            // Both MS destroyed = Draw
-            let banner = document.getElementById('cinematic-banner');
-            if (banner) { banner.classList.add('show'); banner.innerText = 'DRAW'; banner.style.color = '#888'; }
-            cinematicTimer = 90; timeScale = 0.2;
-            setTimeout(() => endGame(false, false, 'DRAW - Mutual Destruction'), 3000);
-            return;
-        }
-        if (pHp !== eHp) {
-            let playerWon = pHp > eHp;
-            let banner = document.getElementById('cinematic-banner');
-            if (banner) { banner.classList.add('show'); banner.innerText = 'STRATEGIC VICTORY'; banner.style.color = playerWon ? profileData.colorAccent : (currentTheme === 'oasis' ? '#ff007f' : '#8b2b2b'); }
-            cinematicTimer = 90; timeScale = 0.2;
-            setTimeout(() => endGame(playerWon, false, 'Strategic Victory'), 3000);
-            return;
-        }
-    }
-    
-    // Time Limit: 20 minutes
+    // Time Limit: 20 minutes — when timer hits 0, the side with more ships wins
     let elapsed = Date.now() - matchStats.startTime;
     if (elapsed >= battleTimeLimitMs) {
-        let pTotal = playerShips.length + (pMS ? 1 : 0);
-        let eTotal = enemyShips.length + (eMS ? 1 : 0);
-        let playerWon = pTotal > eTotal || (pTotal === eTotal && (pMS ? pMS.hp : 0) > (eMS ? eMS.hp : 0));
-        let isDraw = pTotal === eTotal && (pMS ? pMS.hp : 0) === (eMS ? eMS.hp : 0);
+        let pTotal = playerShips.length;
+        let eTotal = enemyShips.length;
+        let playerWon, isDraw, title;
+        
+        if (pTotal !== eTotal) {
+            playerWon = pTotal > eTotal;
+            isDraw = false;
+            title = playerWon ? 'Fleet Dominance Victory' : 'Defeat - Outnumbered';
+        } else {
+            // Tiebreaker: compare Mother Ship health
+            let pHp = pMS ? pMS.hp : 0;
+            let eHp = eMS ? eMS.hp : 0;
+            if (pHp !== eHp) {
+                playerWon = pHp > eHp;
+                isDraw = false;
+                title = playerWon ? 'Strategic Victory' : 'Strategic Defeat';
+            } else {
+                playerWon = false;
+                isDraw = true;
+                title = 'DRAW - Time Expired';
+            }
+        }
         
         let banner = document.getElementById('cinematic-banner');
         if (banner) {
             banner.classList.add('show');
-            banner.innerText = isDraw ? 'TIME - DRAW' : 'TIME EXPIRED';
+            banner.innerText = isDraw ? 'TIME - DRAW' : (playerWon ? 'FLEET DOMINANCE' : 'TIME EXPIRED');
             banner.style.color = isDraw ? '#888' : (playerWon ? profileData.colorAccent : (currentTheme === 'oasis' ? '#ff007f' : '#8b2b2b'));
         }
         cinematicTimer = 90; timeScale = 0.2;
-        setTimeout(() => endGame(playerWon, false, isDraw ? 'DRAW - Time Expired' : (playerWon ? 'Strategic Victory - Time' : 'Defeat - Time Expired')), 3000);
+        setTimeout(() => endGame(playerWon, false, title), 3000);
         return;
     }
 }
