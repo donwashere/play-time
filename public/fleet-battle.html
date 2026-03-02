@@ -71,6 +71,15 @@
         /* Morale Bar */
         #morale-hud { position: absolute; top: 55px; left: 50%; transform: translateX(-50%); z-index: 15; pointer-events: none; text-align: center; }
 
+        /* Fleet Counter HUD */
+        #fleet-counter-hud { position: absolute; top: 80px; left: 50%; transform: translateX(-50%); z-index: 15; pointer-events: none; font-size: 0.9rem; color: #1a1817; font-weight: bold; letter-spacing: 2px; text-shadow: 1px 1px 0 #e6ddc5; }
+
+        /* Territory HUD */
+        #territory-hud { position: absolute; top: 100px; left: 50%; transform: translateX(-50%); z-index: 15; pointer-events: none; text-align: center; }
+
+        /* Discipline selector in prep */
+        #discipline-selector { pointer-events: auto; margin-top: 10px; }
+
     </style>
 </head>
 <body>
@@ -95,6 +104,15 @@
                 <button class="btn btn-sm" onclick="selectFormation('wedge')">⏩ Wedge</button>
             </div>
             <div class="text-center text-sm mt-2 font-bold" id="formation-desc">Choose your fleet arrangement</div>
+            
+            <div class="text-iron text-center text-sm mt-3">FORMATION DISCIPLINE</div>
+            <div class="grid grid-cols-3 gap-2 mt-1" id="discipline-selector">
+                <button class="btn btn-sm" onclick="selectDiscipline('loose')" style="background:#d4c575;">Loose</button>
+                <button class="btn btn-sm" onclick="selectDiscipline('balanced')">Balanced</button>
+                <button class="btn btn-sm" onclick="selectDiscipline('strict')">Strict</button>
+            </div>
+            <div class="text-center text-[10px] mt-1 font-bold" id="discipline-desc">Loose: Ships may chase briefly</div>
+            
             <button class="btn mt-3" style="background: #d4c575;" onclick="lockFormation()">LOCK FORMATION & BEGIN</button>
         </div>
     </div>
@@ -113,6 +131,18 @@
         <div style="width:120px; height:8px; background:#1a1817; border:1px solid #1a1817;">
             <div id="morale-bar" style="height:100%; width:100%; background:#008080; transition: width 0.3s;"></div>
         </div>
+    </div>
+    <!-- FLEET COUNTER HUD -->
+    <div id="fleet-counter-hud" style="display:none;">Fleet: 0 / 20</div>
+    <!-- TERRITORY HUD -->
+    <div id="territory-hud" style="display:none;">
+        <div style="font-size:0.7rem; color:#1a1817; font-weight:bold; letter-spacing:2px;">CONTROL ZONE</div>
+        <div style="width:160px; height:10px; background:#1a1817; border:1px solid #1a1817; position:relative;">
+            <div id="territory-bar-player" style="position:absolute; left:50%; height:100%; width:0; background:#008080; transition: width 0.3s;"></div>
+            <div id="territory-bar-enemy" style="position:absolute; right:50%; height:100%; width:0; background:#8b2b2b; transition: width 0.3s;"></div>
+            <div style="position:absolute; left:50%; top:0; width:2px; height:100%; background:#fff; transform:translateX(-50%);"></div>
+        </div>
+        <div id="territory-status" style="font-size:0.6rem; color:#8b2b2b; font-weight:bold; margin-top:2px;">CONTESTED</div>
     </div>
 
     <!-- MENUS OVERLAY -->
@@ -389,6 +419,16 @@ const FLEET_COMMANDS = [
     { id: 'regroup', label: 'Regroup', desc: 'Reform formation near MS' }
 ];
 
+// --- FLEET CAP ---
+const MAX_FLEET_PER_SIDE = 20;
+
+// --- DISCIPLINE MODES ---
+const DISCIPLINE_MODES = {
+    'loose': { name: 'Loose', desc: 'Ships may chase briefly', pursuitRange: 400, cohesionPenalty: 0.1 },
+    'balanced': { name: 'Balanced', desc: 'Limited pursuit', pursuitRange: 200, cohesionPenalty: 0.3 },
+    'strict': { name: 'Strict', desc: 'No pursuit outside formation radius', pursuitRange: 0, cohesionPenalty: 0.6 }
+};
+
 let profileData = {
     wins: 0, battles: 0, msDestroyed: 0, shipsLost: 0, xp: 0,
     fleetName: 'ALLIED STEAM CARRIER', colorAccent: '#008080',
@@ -416,15 +456,30 @@ let playerFormation = 'line';
 let enemyFormation = 'line';
 let formationLocked = false;
 
-// --- DOMINANCE TRACKING ---
-let dominanceTracker = { side: 0, timer: 0 }; // side: 1=player, 2=enemy, 0=none; timer in frames
+// --- DISCIPLINE ---
+let playerDiscipline = 'loose';
+let enemyDiscipline = 'balanced';
+
+// --- FORMATION ANCHOR ---
+let playerFormationAnchor = null; // Vector position
+let enemyFormationAnchor = null;
+const FORMATION_RADIUS = 500; // Ships won't leave this radius from anchor unless assault
+
+// --- REINFORCEMENT STAGING ---
+const STAGING_THRESHOLD = 0.6; // 60% of fleet alive before attack resumes
+let playerStagingActive = false;
+let enemyStagingActive = false;
+
+// --- TERRITORY CONTROL WIN ---
+let centerTerritory = null; // CapturePoint at center of map
+let territoryHoldTimer = { side: 0, frames: 0 }; // side: 1=player, 2=enemy
 
 // --- MORALE ---
 let playerMorale = 100; // 0-100
 let enemyMorale = 100;
 
 // --- COMMAND MENU STATE ---
-let commandMenuTarget = null; // null = fleet, or a specific ship entity
+let commandMenuTarget = null;
 let commandMenuVisible = false;
 
 // Achievements check
@@ -471,6 +526,15 @@ function applySettings() {
         else { mid.classList.remove('layout-reversed'); minimapContainer.style.right = '20px'; minimapContainer.style.left = 'auto'; }
     }
     saveProfile();
+}
+
+// --- FLEET CAP HELPERS ---
+function getFleetCount(factionId) {
+    return entities.filter(e => e.faction.id === factionId && e.type === 'Ship' && !e.isDead).length;
+}
+
+function canSpawnShip(factionId) {
+    return getFleetCount(factionId) < MAX_FLEET_PER_SIDE;
 }
 
 // --- AUDIO ---
@@ -617,6 +681,8 @@ function switchMenu(target) {
         let prepOvl = document.getElementById('prep-overlay'); if(prepOvl) prepOvl.classList.remove('active');
         let timerHud = document.getElementById('battle-timer-hud'); if(timerHud) timerHud.style.display = 'none';
         let moraleHud = document.getElementById('morale-hud'); if(moraleHud) moraleHud.style.display = 'none';
+        let fleetHud = document.getElementById('fleet-counter-hud'); if(fleetHud) fleetHud.style.display = 'none';
+        let terrHud = document.getElementById('territory-hud'); if(terrHud) terrHud.style.display = 'none';
     }
 
     if (target === 'none') {
@@ -666,18 +732,31 @@ function renderFleetBuilder() {
     let builder = document.getElementById('fleet-builder');
     if (builder) builder.innerHTML = html;
     
+    let totalShips = 0;
+    for (let cls in profileData.fleetBuild) totalShips += profileData.fleetBuild[cls] || 0;
+    
     let ptEl = document.getElementById('fleet-points'); 
     if (ptEl) {
         ptEl.innerText = totalPts;
-        ptEl.className = totalPts > 200 ? "text-red-700 font-black" : "text-black";
+        ptEl.className = (totalPts > 200 || totalShips > MAX_FLEET_PER_SIDE) ? "text-red-700 font-black" : "text-black";
     }
     
     let btnLaunch = document.getElementById('btn-launch-skirmish');
-    if (btnLaunch) btnLaunch.disabled = totalPts > 200 || totalPts === 0;
+    if (btnLaunch) btnLaunch.disabled = totalPts > 200 || totalPts === 0 || totalShips > MAX_FLEET_PER_SIDE;
 }
 function updateFleetBuild(cls, delta) {
     if (!profileData.fleetBuild[cls]) profileData.fleetBuild[cls] = 0;
     profileData.fleetBuild[cls] = Math.max(0, profileData.fleetBuild[cls] + delta);
+    
+    // Enforce fleet cap
+    let totalShips = 0;
+    for (let c in profileData.fleetBuild) totalShips += profileData.fleetBuild[c] || 0;
+    if (totalShips > MAX_FLEET_PER_SIDE && delta > 0) {
+        profileData.fleetBuild[cls]--;
+        showNotification('Fleet cap: ' + MAX_FLEET_PER_SIDE + ' ships max');
+        return;
+    }
+    
     renderFleetBuilder();
 }
 function saveCustomization() { 
@@ -744,13 +823,22 @@ const PERSONALITIES = ['Aggressor', 'Hunter', 'Guardian', 'Flanker'];
 function getPlayerFaction() { return { id: 1, color: profileData.colorAccent, light: '#ffffff', enemyId: 2 }; }
 function getEnemyFaction() { return { id: 2, color: currentTheme === 'oasis' ? '#ff007f' : '#8b2b2b', light: currentTheme === 'oasis' ? '#ccff00' : '#ff4500', enemyId: 1 }; }
 
+// --- DISCIPLINE SYSTEM ---
+function selectDiscipline(mode) {
+    playerDiscipline = mode;
+    let desc = document.getElementById('discipline-desc');
+    if (desc) desc.innerText = DISCIPLINE_MODES[mode].name + ': ' + DISCIPLINE_MODES[mode].desc;
+    
+    document.querySelectorAll('#discipline-selector .btn-sm').forEach(b => b.style.background = '#f0eadd');
+    event.target.style.background = '#d4c575';
+}
+
 // --- FORMATION SYSTEM ---
 function selectFormation(type) {
     playerFormation = type;
     let desc = document.getElementById('formation-desc');
     if (desc) desc.innerText = FORMATIONS[type].name + ': ' + FORMATIONS[type].desc;
     
-    // Highlight selected button
     document.querySelectorAll('#formation-selector .btn-sm').forEach(b => b.style.background = '#f0eadd');
     event.target.style.background = '#d4c575';
 }
@@ -760,42 +848,46 @@ function lockFormation() {
     battlePhase = 'formation_lock';
     showNotification('Formation Locked! Battle begins...');
     
-    // Apply player formation positions
+    // Set formation anchors
+    let pMS = entities.find(e => e.type === 'MotherShip' && e.faction.id === 1);
+    let eMS = entities.find(e => e.type === 'MotherShip' && e.faction.id === 2);
+    if (pMS) playerFormationAnchor = new Vector(pMS.pos.x, pMS.pos.y - 300);
+    if (eMS) enemyFormationAnchor = new Vector(eMS.pos.x, eMS.pos.y + 300);
+    
     applyFormationToFleet(1, playerFormation);
     
-    // AI picks counter-formation
     chooseAIFormation();
     applyFormationToFleet(2, enemyFormation);
     
     let prepOvl = document.getElementById('prep-overlay');
     if (prepOvl) prepOvl.classList.remove('active');
     
-    // Transition to engagement after 2 seconds
     setTimeout(() => {
         battlePhase = 'engagement';
-        matchStats.startTime = Date.now(); // Start timer when combat begins
+        matchStats.startTime = Date.now();
         showNotification('ENGAGE!');
         let timerHud = document.getElementById('battle-timer-hud'); if(timerHud) timerHud.style.display = 'block';
         let moraleHud = document.getElementById('morale-hud'); if(moraleHud) moraleHud.style.display = 'block';
+        let fleetHud = document.getElementById('fleet-counter-hud'); if(fleetHud) fleetHud.style.display = 'block';
+        let terrHud = document.getElementById('territory-hud'); if(terrHud) terrHud.style.display = 'block';
     }, 2000);
 }
 
 function chooseAIFormation() {
-    // AI evaluates player formation and picks counter
     let counterFormation = FORMATIONS[playerFormation].counter;
     
-    // Difficulty affects intelligence
     if (skirmishConfig.difficulty < 1.0) {
-        // Easy AI picks random
         let keys = Object.keys(FORMATIONS);
         enemyFormation = keys[Math.floor(Math.random() * keys.length)];
     } else if (skirmishConfig.difficulty >= 1.5) {
-        // Hard AI always counters
         enemyFormation = counterFormation;
     } else {
-        // Standard: 60% chance to counter
         enemyFormation = Math.random() < 0.6 ? counterFormation : Object.keys(FORMATIONS)[Math.floor(Math.random() * Object.keys(FORMATIONS).length)];
     }
+    
+    // AI picks discipline based on difficulty
+    enemyDiscipline = skirmishConfig.difficulty >= 1.5 ? 'strict' : (skirmishConfig.difficulty >= 1.0 ? 'balanced' : 'loose');
+    
     showNotification('Enemy deploys: ' + FORMATIONS[enemyFormation].name);
 }
 
@@ -804,15 +896,18 @@ function applyFormationToFleet(factionId, formation) {
     let ms = entities.find(e => e.type === 'MotherShip' && e.faction.id === factionId);
     if (!ms || ships.length === 0) return;
     
-    let cx = ms.pos.x, cy = ms.pos.y;
+    let anchor = factionId === 1 ? playerFormationAnchor : enemyFormationAnchor;
+    let cx = anchor ? anchor.x : ms.pos.x;
+    let cy = anchor ? anchor.y : ms.pos.y;
     let spacing = 80;
     let isEnemy = factionId === 2;
-    let dir = isEnemy ? 1 : -1; // Enemy faces down, player faces up
+    let dir = isEnemy ? 1 : -1;
     
     ships.forEach((ship, i) => {
         let pos = getFormationPosition(formation, i, ships.length, cx, cy, spacing, dir);
         ship.formationTarget = new Vector(pos.x, pos.y);
-        ship.commandOverride = { type: 'move', pos: new Vector(pos.x, pos.y) };
+        ship.commandOverride = { type: 'formation_move', pos: new Vector(pos.x, pos.y) };
+        ship.inFormation = true;
     });
 }
 
@@ -851,15 +946,12 @@ function getFormationPosition(formation, index, total, cx, cy, spacing, dir) {
             break;
         }
         case 'escort': {
-            // Heavy ships front, support back
             let halfPoint = Math.floor(total * 0.6);
             if (index < halfPoint) {
-                // Front line
                 let xOff = (index - (halfPoint - 1) / 2) * spacing;
                 x = cx + xOff;
                 y = cy + dir * 400;
             } else {
-                // Back line
                 let backIndex = index - halfPoint;
                 let backTotal = total - halfPoint;
                 let xOff = (backIndex - (backTotal - 1) / 2) * spacing;
@@ -916,7 +1008,6 @@ function openFleetCommandMenu() {
     });
     btns.innerHTML = html;
     
-    // Position near the fleet overview panel
     menu.style.left = '310px';
     menu.style.top = '300px';
     menu.classList.add('active');
@@ -937,32 +1028,36 @@ function executeSingleCommand(cmdId) {
     let pMS = entities.find(e => e.type === 'MotherShip' && e.faction.id === 1);
     let eMS = entities.find(e => e.type === 'MotherShip' && e.faction.id === 2);
     
+    // Commands persist until target destroyed, new command issued, or formation changed
+    ship.commandPersistent = true;
+    ship.inFormation = false; // Break formation for individual command
+    
     switch(cmdId) {
         case 'hold':
-            ship.commandOverride = { type: 'move', pos: ship.pos.copy() };
+            ship.commandOverride = { type: 'move', pos: ship.pos.copy(), persistent: true };
             ship.vel.mult(0);
             break;
         case 'intercept': {
             let nearest = null, nearDist = Infinity;
             entities.forEach(e => { if(e.faction.id !== 1 && !e.isDead && e.type === 'Ship') { let d = ship.pos.dist(e.pos); if(d < nearDist) { nearDist = d; nearest = e; } } });
-            if (nearest) ship.commandOverride = { type: 'attack', target: nearest };
+            if (nearest) ship.commandOverride = { type: 'attack', target: nearest, persistent: true };
             break;
         }
         case 'protect': {
             let weakest = null, lowestHp = Infinity;
             entities.forEach(e => { if(e.faction.id === 1 && !e.isDead && e !== ship && e.type === 'Ship') { if(e.hp < lowestHp) { lowestHp = e.hp; weakest = e; } } });
-            if (weakest) ship.commandOverride = { type: 'move', pos: weakest.pos.copy() };
+            if (weakest) ship.commandOverride = { type: 'protect', target: weakest, persistent: true };
             break;
         }
         case 'focusfire':
-            if (ship.target && !ship.target.isDead) ship.commandOverride = { type: 'attack', target: ship.target };
+            if (ship.target && !ship.target.isDead) ship.commandOverride = { type: 'attack', target: ship.target, persistent: true };
             break;
         case 'retreat':
-            if (pMS) ship.commandOverride = { type: 'move', pos: new Vector(pMS.pos.x + randomRange(-150,150), pMS.pos.y + randomRange(-100,100)) };
+            if (pMS) ship.commandOverride = { type: 'move', pos: new Vector(pMS.pos.x + randomRange(-150,150), pMS.pos.y + randomRange(-100,100)), persistent: true };
             break;
         case 'overdrive':
             ship.vel.mult(2.5);
-            ship.overdriveTimer = 180; // 3 seconds
+            ship.overdriveTimer = 180;
             showNotification('Overdrive engaged!');
             break;
         case 'disable_wpn':
@@ -970,18 +1065,19 @@ function executeSingleCommand(cmdId) {
             showNotification(ship.weaponsDisabled ? 'Weapons offline' : 'Weapons online');
             break;
         case 'guard_area':
-            ship.commandOverride = { type: 'move', pos: ship.pos.copy() };
+            ship.commandOverride = { type: 'move', pos: ship.pos.copy(), persistent: true };
             ship.guardRadius = 200;
             break;
         case 'ambush':
-            ship.commandOverride = { type: 'move', pos: ship.pos.copy() };
+            ship.commandOverride = { type: 'move', pos: ship.pos.copy(), persistent: true };
             ship.ambushMode = true;
             ship.vel.mult(0);
             showNotification('Ambush set');
             break;
         case 'repair':
             if (ship.shipClass === 'Support') {
-                ship.commandOverride = null; // Let it auto-heal
+                ship.commandOverride = null;
+                ship.commandPersistent = false;
                 showNotification('Repair priority');
             }
             break;
@@ -996,37 +1092,59 @@ function executeFleetCommand(cmdId) {
     
     let targets = entities.filter(e => e.faction.id === 1 && e.type === 'Ship' && !e.isDead && (!hasSel || e.selected));
     
+    // Fleet commands break formation lock for assault, otherwise maintain it
+    let breaksFormation = ['assault', 'divide', 'encircle', 'flankleft', 'flankright'].includes(cmdId);
+    
     switch(cmdId) {
         case 'advance':
-            targets.forEach((e, i) => {
-                e.commandOverride = { type: 'move', pos: new Vector(e.pos.x, e.pos.y - 500) };
-            });
+            // Move formation anchor forward
+            if (playerFormationAnchor) {
+                playerFormationAnchor.y -= 400;
+                applyFormationToFleet(1, playerFormation);
+            } else {
+                targets.forEach((e, i) => {
+                    e.commandOverride = { type: 'move', pos: new Vector(e.pos.x, e.pos.y - 500), persistent: true };
+                });
+            }
             break;
         case 'holdline':
             targets.forEach(e => {
-                e.commandOverride = { type: 'move', pos: e.pos.copy() };
+                e.commandOverride = { type: 'move', pos: e.pos.copy(), persistent: true };
                 e.vel.mult(0);
             });
             break;
         case 'assault':
-            if (eMS) targets.forEach(e => { e.commandOverride = { type: 'attack', target: eMS }; });
+            if (eMS) targets.forEach(e => { 
+                e.commandOverride = { type: 'attack', target: eMS, persistent: true }; 
+                e.inFormation = false;
+            });
             break;
         case 'defensive':
         case 'defend':
-            if (pMS) targets.forEach(e => { e.commandOverride = { type: 'move', pos: new Vector(pMS.pos.x + randomRange(-200, 200), pMS.pos.y + randomRange(-200, 200)) }; });
+            if (pMS) {
+                playerFormationAnchor = new Vector(pMS.pos.x, pMS.pos.y);
+                applyFormationToFleet(1, 'circle');
+            }
             break;
         case 'flankleft':
-            targets.forEach(e => { e.commandOverride = { type: 'move', pos: new Vector(e.pos.x - 600, e.pos.y - 200) }; });
+            targets.forEach(e => { 
+                e.commandOverride = { type: 'move', pos: new Vector(e.pos.x - 600, e.pos.y - 200), persistent: true }; 
+                e.inFormation = false;
+            });
             break;
         case 'flankright':
-            targets.forEach(e => { e.commandOverride = { type: 'move', pos: new Vector(e.pos.x + 600, e.pos.y - 200) }; });
+            targets.forEach(e => { 
+                e.commandOverride = { type: 'move', pos: new Vector(e.pos.x + 600, e.pos.y - 200), persistent: true }; 
+                e.inFormation = false;
+            });
             break;
         case 'encircle':
             if (eMS) {
                 targets.forEach((e, i) => {
                     let angle = (Math.PI * 2 / targets.length) * i;
                     let r = 400;
-                    e.commandOverride = { type: 'move', pos: new Vector(eMS.pos.x + Math.cos(angle) * r, eMS.pos.y + Math.sin(angle) * r) };
+                    e.commandOverride = { type: 'move', pos: new Vector(eMS.pos.x + Math.cos(angle) * r, eMS.pos.y + Math.sin(angle) * r), persistent: true };
+                    e.inFormation = false;
                 });
             }
             break;
@@ -1035,13 +1153,16 @@ function executeFleetCommand(cmdId) {
             targets.forEach((e, i) => {
                 if (enemyShips.length > 0) {
                     let t = enemyShips[i % enemyShips.length];
-                    e.commandOverride = { type: 'attack', target: t };
+                    e.commandOverride = { type: 'attack', target: t, persistent: true };
+                    e.inFormation = false;
                 }
             });
             break;
         }
         case 'regroup':
             if (pMS) {
+                playerFormationAnchor = new Vector(pMS.pos.x, pMS.pos.y - 300);
+                targets.forEach(e => { e.inFormation = true; e.commandPersistent = false; });
                 applyFormationToFleet(1, playerFormation);
             }
             break;
@@ -1081,7 +1202,7 @@ class Obstacle {
 
 class CapturePoint {
     constructor(x, y, type) {
-        this.pos = new Vector(x, y); this.radius = 100; this.type = type;
+        this.pos = new Vector(x, y); this.radius = type === 'center_territory' ? 200 : 100; this.type = type;
         this.owner = 0; this.progress = 0;
         this.angle = 0;
     }
@@ -1104,24 +1225,36 @@ class CapturePoint {
         ctx.save(); ctx.translate(this.pos.x, this.pos.y); ctx.rotate(this.angle);
         ctx.beginPath(); ctx.arc(0, 0, this.radius, 0, Math.PI*2);
         
+        let isCenter = this.type === 'center_territory';
+        
         if (currentTheme === 'oasis') {
             ctx.fillStyle = this.owner === 1 ? 'rgba(0,255,255,0.2)' : (this.owner === 2 ? 'rgba(255,0,127,0.2)' : 'rgba(255,255,255,0.1)');
-            ctx.fill(); ctx.strokeStyle = '#fff'; ctx.lineWidth=2; ctx.setLineDash([15, 20]); ctx.stroke(); ctx.setLineDash([]);
-            drawGear(ctx, 0, 0, 40, 10, -this.angle*2, '#ffffff', '#000');
+            ctx.fill(); ctx.strokeStyle = isCenter ? '#ffea00' : '#fff'; ctx.lineWidth = isCenter ? 4 : 2; ctx.setLineDash([15, 20]); ctx.stroke(); ctx.setLineDash([]);
+            drawGear(ctx, 0, 0, isCenter ? 60 : 40, isCenter ? 12 : 10, -this.angle*2, '#ffffff', '#000');
             ctx.fillStyle = this.owner === 1 ? profileData.colorAccent : (this.owner === 2 ? '#ff007f' : '#000');
-            ctx.beginPath(); ctx.arc(0, 0, 15, 0, Math.PI*2); ctx.fill();
+            ctx.beginPath(); ctx.arc(0, 0, isCenter ? 25 : 15, 0, Math.PI*2); ctx.fill();
         } else {
-            ctx.fillStyle = this.owner === 1 ? 'rgba(0,128,128,0.1)' : (this.owner === 2 ? 'rgba(139,43,43,0.1)' : 'rgba(100,100,100,0.1)');
-            ctx.fill(); ctx.strokeStyle = '#1a1817'; ctx.setLineDash([10, 15]); ctx.stroke(); ctx.setLineDash([]);
-            drawGear(ctx, 0, 0, 40, 10, -this.angle*2, '#b5a895', '#1a1817');
+            ctx.fillStyle = this.owner === 1 ? 'rgba(0,128,128,0.15)' : (this.owner === 2 ? 'rgba(139,43,43,0.15)' : 'rgba(100,100,100,0.1)');
+            ctx.fill(); ctx.strokeStyle = isCenter ? '#8b2b2b' : '#1a1817'; ctx.lineWidth = isCenter ? 4 : 1; ctx.setLineDash([10, 15]); ctx.stroke(); ctx.setLineDash([]);
+            drawGear(ctx, 0, 0, isCenter ? 60 : 40, isCenter ? 12 : 10, -this.angle*2, '#b5a895', '#1a1817');
             ctx.fillStyle = this.owner === 1 ? profileData.colorAccent : (this.owner === 2 ? '#8b2b2b' : '#555');
-            ctx.beginPath(); ctx.arc(0, 0, 15, 0, Math.PI*2); ctx.fill();
+            ctx.beginPath(); ctx.arc(0, 0, isCenter ? 25 : 15, 0, Math.PI*2); ctx.fill();
         }
+        
+        // Label for center territory
+        if (isCenter) {
+            ctx.rotate(-this.angle);
+            ctx.fillStyle = '#1a1817';
+            ctx.font = "bold 14px 'Special Elite'";
+            ctx.textAlign = 'center';
+            ctx.fillText('CONTROL ZONE', 0, -this.radius - 10);
+        }
+        
         ctx.restore();
         
-        ctx.fillStyle = '#1a1817'; ctx.fillRect(this.pos.x - 40, this.pos.y + 40, 80, 8);
-        if (this.progress > 0) { ctx.fillStyle = profileData.colorAccent; ctx.fillRect(this.pos.x, this.pos.y + 41, 38 * (this.progress/100), 6); }
-        else if (this.progress < 0) { ctx.fillStyle = currentTheme === 'oasis' ? '#ff007f' : '#8b2b2b'; ctx.fillRect(this.pos.x + (38*(this.progress/100)), this.pos.y + 41, 38 * Math.abs(this.progress/100), 6); }
+        ctx.fillStyle = '#1a1817'; ctx.fillRect(this.pos.x - 40, this.pos.y + (isCenter ? 60 : 40), 80, 8);
+        if (this.progress > 0) { ctx.fillStyle = profileData.colorAccent; ctx.fillRect(this.pos.x, this.pos.y + (isCenter ? 61 : 41), 38 * (this.progress/100), 6); }
+        else if (this.progress < 0) { ctx.fillStyle = currentTheme === 'oasis' ? '#ff007f' : '#8b2b2b'; ctx.fillRect(this.pos.x + (38*(this.progress/100)), this.pos.y + (isCenter ? 61 : 41), 38 * Math.abs(this.progress/100), 6); }
     }
 }
 
@@ -1139,7 +1272,6 @@ class Entity {
     takeDamage(amount) {
         if (this.shieldTimer > 0) amount *= 0.1;
         this.hp -= amount;
-        // Track damage dealt
         if (this.faction) matchStats.totalDamageDealt += amount;
         if (this.hp <= 0 && !this.isDead) { this.hp = 0; this.die(); }
     }
@@ -1195,13 +1327,13 @@ class MotherShip extends Entity {
         this.angle += 0.001 * timeScale;
         this.gearRot += 0.01 * timeScale;
 
-        // No combat during preparation
         if (battlePhase === 'preparation' || battlePhase === 'formation_lock') return;
 
         if (this.faction.id === 2 && timeScale > 0) {
             let aiRate = 12 + (matchStats.lost * 2); 
             this.aiEnergy += (aiRate / 60) * timeScale;
-            if (this.aiEnergy >= 60) {
+            // AI respects fleet cap
+            if (this.aiEnergy >= 60 && canSpawnShip(2)) {
                 this.aiEnergy -= 60;
                 buildAIFleet(this.pos.x, this.pos.y, this.faction, skirmishConfig.aiProfile, 60);
             }
@@ -1301,13 +1433,24 @@ class Ship extends Entity {
         this.state = 'Idle';
         this.targetLockTimer = 0;
         
-        // New command properties
+        // Formation & discipline properties
         this.formationTarget = null;
+        this.inFormation = true;
+        this.commandPersistent = false; // Commands persist until explicitly changed
+        
+        // Command properties
         this.weaponsDisabled = false;
         this.overdriveTimer = 0;
         this.guardRadius = 0;
         this.ambushMode = false;
         this.shipMorale = 100;
+        
+        // Staging state for reinforcements
+        this.stagingState = false;
+        this.stagingRallyPoint = null;
+
+        // Cohesion tracking
+        this.cohesionPenalty = 0; // 0-1, affects speed and accuracy
 
         this.genPlates();
     }
@@ -1347,6 +1490,10 @@ class Ship extends Entity {
         // Overdrive timer
         if (this.overdriveTimer > 0) { this.overdriveTimer -= timeScale; speedMult *= 1.8; }
         
+        // Cohesion penalty: reduce speed and accuracy when far from formation
+        this.updateCohesion();
+        speedMult *= (1 - this.cohesionPenalty * 0.4); // Up to 40% speed reduction
+        
         if (activeCondition.id === 'ScrapStorm' && Math.random() < 0.005) this.takeDamage(2);
 
         // During preparation: only move to formation position, no combat
@@ -1375,11 +1522,47 @@ class Ship extends Entity {
             return;
         }
 
+        // --- STAGING STATE: reinforcements wait at rally point ---
+        if (this.stagingState) {
+            if (this.stagingRallyPoint) {
+                let distToRally = this.pos.dist(this.stagingRallyPoint);
+                if (distToRally > 50) {
+                    this.applyForce(this.seek(this.stagingRallyPoint));
+                } else {
+                    this.vel.mult(0.9);
+                }
+            }
+            
+            // Check if fleet threshold met to leave staging
+            let aliveCount = getFleetCount(this.faction.id);
+            let threshold = Math.ceil(MAX_FLEET_PER_SIDE * STAGING_THRESHOLD);
+            if (aliveCount >= threshold || aliveCount >= getFleetCount(this.faction.id)) {
+                this.stagingState = false;
+                this.stagingRallyPoint = null;
+                this.inFormation = true;
+                // Re-apply formation
+                if (this.faction.id === 1) applyFormationToFleet(1, playerFormation);
+                else applyFormationToFleet(2, enemyFormation);
+            }
+            
+            let separateForce = this.separate(entities).mult(1.0);
+            this.applyForce(separateForce);
+            this.vel.add(this.acc);
+            let curMax = this.maxSpeed * 0.6;
+            this.vel.x = Math.max(-curMax, Math.min(curMax, this.vel.x)); this.vel.y = Math.max(-curMax, Math.min(curMax, this.vel.y));
+            this.pos.add(this.vel.copy().mult(timeScale));
+            if (this.vel.mag() > 0.1) this.angle = Math.atan2(this.vel.y, this.vel.x);
+            this.acc.mult(0);
+            this.gearRot += this.vel.mag() * 0.05 * timeScale;
+            return;
+        }
+
         // Morale break: low morale causes retreat to MS
-        if (factionMorale < 25 && !this.commandOverride && Math.random() < 0.005) {
+        if (factionMorale < 25 && !this.commandPersistent && Math.random() < 0.005) {
             if (myMS && !myMS.isDead) {
                 this.state = 'Fleeing';
                 this.commandOverride = { type: 'move', pos: new Vector(myMS.pos.x + randomRange(-200, 200), myMS.pos.y + randomRange(-100, 100)) };
+                this.inFormation = false;
             }
         }
 
@@ -1391,7 +1574,7 @@ class Ship extends Entity {
                 let nearEnemy = entities.find(e => e.faction.id !== this.faction.id && !e.isDead && e.type === 'Ship' && this.pos.dist(e.pos) < this.baseRange);
                 if (nearEnemy) {
                     this.ambushMode = false;
-                    this.commandOverride = { type: 'attack', target: nearEnemy };
+                    this.commandOverride = { type: 'attack', target: nearEnemy, persistent: true };
                     showNotification('Ambush sprung!');
                 } else {
                     this.vel.mult(0.95);
@@ -1418,22 +1601,26 @@ class Ship extends Entity {
         this.fireTimer -= timeScale;
         
         // Fire only if weapons are not disabled and not in prep
+        // Cohesion penalty affects accuracy (miss chance)
         if (this.target && !this.target.isDead && this.disabledTimer <= 0 && this.state !== 'Fleeing' && !this.weaponsDisabled) {
             let dist = this.pos.dist(this.target.pos);
             if (dist < this.baseRange) {
                 if (this.fireTimer <= 0) {
-                    this.angle = Math.atan2(this.target.pos.y - this.pos.y, this.target.pos.x - this.pos.x);
-                    
-                    if (this.shipClass === 'Support' && this.target.faction.id === this.faction.id) {
-                        this.target.hp = Math.min(this.target.maxHp, this.target.hp + this.dmg);
-                        ctx.strokeStyle = currentTheme === 'oasis' ? '#ffea00' : '#0f0'; ctx.lineWidth = currentTheme === 'oasis' ? 4 : 2;
-                        ctx.beginPath(); ctx.moveTo(this.pos.x, this.pos.y); ctx.lineTo(this.target.pos.x, this.target.pos.y); ctx.stroke();
-                    } else {
-                        let targetPos = this.target.pos.copy(); targetPos.x += randomRange(-10, 10); targetPos.y += randomRange(-10, 10);
-                        let nx = this.pos.x + Math.cos(this.angle) * this.radius * 1.5; let ny = this.pos.y + Math.sin(this.angle) * this.radius * 1.5;
-                        let finalDmg = this.dmg * (activeCondition.id==='Overcharge'?1.5:1.0);
-                        if(this.shipClass === 'Siege' && this.target.type === 'MotherShip') finalDmg *= 2; 
-                        lasers.push(new Laser(nx, ny, targetPos, this.faction.light, finalDmg, this.faction.id === 1, this.id));
+                    // Cohesion penalty = miss chance
+                    if (Math.random() > this.cohesionPenalty * 0.5) {
+                        this.angle = Math.atan2(this.target.pos.y - this.pos.y, this.target.pos.x - this.pos.x);
+                        
+                        if (this.shipClass === 'Support' && this.target.faction.id === this.faction.id) {
+                            this.target.hp = Math.min(this.target.maxHp, this.target.hp + this.dmg);
+                            ctx.strokeStyle = currentTheme === 'oasis' ? '#ffea00' : '#0f0'; ctx.lineWidth = currentTheme === 'oasis' ? 4 : 2;
+                            ctx.beginPath(); ctx.moveTo(this.pos.x, this.pos.y); ctx.lineTo(this.target.pos.x, this.target.pos.y); ctx.stroke();
+                        } else {
+                            let targetPos = this.target.pos.copy(); targetPos.x += randomRange(-10, 10); targetPos.y += randomRange(-10, 10);
+                            let nx = this.pos.x + Math.cos(this.angle) * this.radius * 1.5; let ny = this.pos.y + Math.sin(this.angle) * this.radius * 1.5;
+                            let finalDmg = this.dmg * (activeCondition.id==='Overcharge'?1.5:1.0);
+                            if(this.shipClass === 'Siege' && this.target.type === 'MotherShip') finalDmg *= 2; 
+                            lasers.push(new Laser(nx, ny, targetPos, this.faction.light, finalDmg, this.faction.id === 1, this.id));
+                        }
                     }
                     this.fireTimer = this.fireRate * (factionMorale > 70 ? 0.8 : 1.0); 
                 }
@@ -1456,36 +1643,142 @@ class Ship extends Entity {
         if (this.hp < this.maxHp * 0.5 && Math.random() < 0.1 * timeScale) particles.push(new Particle(this.pos.x, this.pos.y, '#555', 2, 20, 2));
     }
 
+    updateCohesion() {
+        let discipline = this.faction.id === 1 ? playerDiscipline : enemyDiscipline;
+        let discMode = DISCIPLINE_MODES[discipline];
+        
+        if (!this.inFormation || !this.formationTarget) {
+            this.cohesionPenalty = 0;
+            return;
+        }
+        
+        let distFromFormation = this.pos.dist(this.formationTarget);
+        let formationRadius = FORMATION_RADIUS;
+        
+        if (distFromFormation > formationRadius) {
+            this.cohesionPenalty = Math.min(1, (distFromFormation - formationRadius) / 500) * discMode.cohesionPenalty;
+        } else {
+            this.cohesionPenalty = 0;
+        }
+    }
+
     runAI() {
         this.aiTimer -= timeScale;
         if (this.targetLockTimer > 0) this.targetLockTimer -= timeScale;
 
         let myMS = entities.find(e => e.type === 'MotherShip' && e.faction.id === this.faction.id);
         let factionMorale = this.faction.id === 1 ? playerMorale : enemyMorale;
+        let discipline = this.faction.id === 1 ? playerDiscipline : enemyDiscipline;
+        let discMode = DISCIPLINE_MODES[discipline];
         
         // Fleeing override for AI based on morale
-        if (factionMorale < 25 && !this.commandOverride && this.faction.id !== 1 && Math.random() < 0.01) { 
+        if (factionMorale < 25 && !this.commandPersistent && this.faction.id !== 1 && Math.random() < 0.01) { 
             this.state = 'Fleeing'; 
         }
 
-        if (this.state === 'Fleeing' && !this.commandOverride) {
+        if (this.state === 'Fleeing' && !this.commandPersistent) {
             if (myMS && !myMS.isDead) {
                 this.applyForce(this.seek(myMS.pos));
             } else {
                 let edgeTarget = new Vector(this.pos.x < currentWorldSize/2 ? 0 : currentWorldSize, this.pos.y < currentWorldSize/2 ? 0 : currentWorldSize);
                 this.applyForce(this.seek(edgeTarget));
             }
-            // Recover morale near MS
             if (myMS && this.pos.dist(myMS.pos) < myMS.auraRadius) {
                 if (factionMorale > 40) this.state = 'Idle';
             }
             return;
         }
 
+        // --- FORMATION DISCIPLINE: ships stay in formation unless commanded otherwise ---
+        if (this.inFormation && this.formationTarget && !this.commandPersistent) {
+            let distFromFormation = this.pos.dist(this.formationTarget);
+            
+            // Check if enemy has breached formation line
+            let enemyBreached = false;
+            let nearbyEnemy = entities.find(e => e.faction.id !== this.faction.id && !e.isDead && e.type === 'Ship' && this.pos.dist(e.pos) < this.baseRange);
+            if (nearbyEnemy) {
+                // Check if enemy is within formation radius - then engage
+                let anchor = this.faction.id === 1 ? playerFormationAnchor : enemyFormationAnchor;
+                if (anchor && nearbyEnemy.pos.dist(anchor) < FORMATION_RADIUS) {
+                    enemyBreached = true;
+                }
+            }
+            
+            if (enemyBreached && nearbyEnemy) {
+                // Engage enemy within formation zone
+                this.target = nearbyEnemy;
+                this.state = 'EngageEnemy';
+                this.maneuverAroundTarget();
+                
+                // After killing target, return to formation
+                if (!this.target || this.target.isDead) {
+                    this.target = null;
+                    this.applyForce(this.seek(this.formationTarget));
+                }
+            } else if (distFromFormation > 50) {
+                // Return to formation position
+                this.applyForce(this.seek(this.formationTarget));
+                this.state = 'FormationHold';
+                
+                // Only fire at targets within range, don't pursue
+                if (this.aiTimer <= 0) {
+                    this.aiTimer = 60;
+                    let enemiesInRange = entities.filter(e => e.faction.id !== this.faction.id && !e.isDead && this.pos.dist(e.pos) < this.baseRange);
+                    if (enemiesInRange.length > 0) {
+                        this.target = enemiesInRange.reduce((a, b) => this.pos.dist(a.pos) < this.pos.dist(b.pos) ? a : b);
+                    } else {
+                        this.target = null;
+                    }
+                }
+            } else {
+                // At formation position - hold and fire at nearby enemies
+                this.vel.mult(0.9);
+                this.state = 'FormationHold';
+                
+                if (this.aiTimer <= 0) {
+                    this.aiTimer = 60;
+                    let pursuableRange = this.baseRange + discMode.pursuitRange;
+                    let enemiesInRange = entities.filter(e => e.faction.id !== this.faction.id && !e.isDead && this.pos.dist(e.pos) < pursuableRange);
+                    
+                    if (enemiesInRange.length > 0) {
+                        // Only pursue within discipline limits
+                        let inRangeOnly = enemiesInRange.filter(e => this.pos.dist(e.pos) < this.baseRange);
+                        if (inRangeOnly.length > 0) {
+                            this.target = inRangeOnly.reduce((a, b) => this.pos.dist(a.pos) < this.pos.dist(b.pos) ? a : b);
+                        } else if (discMode.pursuitRange > 0) {
+                            // Brief pursuit allowed
+                            this.target = enemiesInRange.reduce((a, b) => this.pos.dist(a.pos) < this.pos.dist(b.pos) ? a : b);
+                        } else {
+                            this.target = null;
+                        }
+                    } else {
+                        this.target = null;
+                    }
+                }
+            }
+            return;
+        }
+
+        // --- PERSISTENT COMMAND HANDLING ---
         if (this.commandOverride) {
-            if (this.commandOverride.type === 'move') {
+            if (this.commandOverride.type === 'formation_move') {
+                // Formation move: go to position
+                if (this.pos.dist(this.commandOverride.pos) < 50) { 
+                    this.commandOverride = null; 
+                }
+                else this.applyForce(this.seek(this.commandOverride.pos));
+                return;
+            } else if (this.commandOverride.type === 'move') {
                 this.state = 'MoveToObjective';
-                if (this.pos.dist(this.commandOverride.pos) < 50) { this.commandOverride = null; this.guardRadius = 0; }
+                if (this.pos.dist(this.commandOverride.pos) < 50) { 
+                    if (!this.commandOverride.persistent) {
+                        this.commandOverride = null; 
+                        this.guardRadius = 0; 
+                    } else {
+                        // Persistent: hold position
+                        this.vel.mult(0.9);
+                    }
+                }
                 else this.applyForce(this.seek(this.commandOverride.pos));
                 
                 if (this.aiTimer <= 0) {
@@ -1495,16 +1788,50 @@ class Ship extends Entity {
                 return;
             } else if (this.commandOverride.type === 'attack') {
                 this.target = this.commandOverride.target;
-                if (this.target && this.target.isDead) this.commandOverride = null;
+                if (this.target && this.target.isDead) {
+                    if (this.commandOverride.persistent) {
+                        // Find new target of same type
+                        let newTarget = entities.find(e => e.faction.id !== this.faction.id && !e.isDead && e.type === this.target.type);
+                        if (newTarget) {
+                            this.commandOverride.target = newTarget;
+                            this.target = newTarget;
+                        } else {
+                            this.commandOverride = null;
+                            this.commandPersistent = false;
+                        }
+                    } else {
+                        this.commandOverride = null;
+                    }
+                }
                 else {
                     this.state = this.target.type === 'MotherShip' ? 'AttackMotherShip' : 'PursueEnemy';
                     this.maneuverAroundTarget();
                 }
                 return;
+            } else if (this.commandOverride.type === 'protect') {
+                let protectTarget = this.commandOverride.target;
+                if (protectTarget && !protectTarget.isDead) {
+                    let distToTarget = this.pos.dist(protectTarget.pos);
+                    if (distToTarget > 100) {
+                        this.applyForce(this.seek(protectTarget.pos));
+                    } else {
+                        this.vel.mult(0.9);
+                    }
+                    // Attack enemies near protected ally
+                    let threat = entities.find(e => e.faction.id !== this.faction.id && !e.isDead && e.type === 'Ship' && e.pos.dist(protectTarget.pos) < 300);
+                    if (threat) {
+                        this.target = threat;
+                        this.state = 'EngageEnemy';
+                    }
+                } else {
+                    this.commandOverride = null;
+                    this.commandPersistent = false;
+                }
+                return;
             }
         }
 
-        if (this.target && this.target.type === 'MotherShip' && !this.commandOverride) {
+        if (this.target && this.target.type === 'MotherShip' && !this.commandPersistent) {
             let enemyShips = entities.filter(e => e.faction.id !== this.faction.id && e.type === 'Ship' && !e.isDead);
             if (enemyShips.length > 0) {
                 this.target = null;
@@ -1638,7 +1965,7 @@ class Ship extends Entity {
             else this.vel.mult(0.85);
         }
         
-        if (this.personality === 'Guardian' && !this.commandOverride) {
+        if (this.personality === 'Guardian' && !this.commandPersistent) {
             let myMS = entities.find(e => e.type === 'MotherShip' && e.faction.id === this.faction.id);
             if (myMS && this.pos.dist(myMS.pos) > myMS.auraRadius * 1.2) this.applyForce(this.seek(myMS.pos).mult(2.0));
         }
@@ -1711,7 +2038,7 @@ class Ship extends Entity {
         }
         if (this.selected && this.commandOverride && !isMenu) {
             ctx.rotate(-this.angle); ctx.beginPath(); ctx.moveTo(0, 0);
-            if (this.commandOverride.type === 'move') { ctx.lineTo(this.commandOverride.pos.x - this.pos.x, this.commandOverride.pos.y - this.pos.y); ctx.strokeStyle = currentTheme === 'oasis' ? 'rgba(255,255,255,0.4)' : 'rgba(26,24,23,0.3)'; ctx.lineWidth=3; ctx.stroke(); } 
+            if (this.commandOverride.type === 'move' || this.commandOverride.type === 'formation_move') { ctx.lineTo(this.commandOverride.pos.x - this.pos.x, this.commandOverride.pos.y - this.pos.y); ctx.strokeStyle = currentTheme === 'oasis' ? 'rgba(255,255,255,0.4)' : 'rgba(26,24,23,0.3)'; ctx.lineWidth=3; ctx.stroke(); } 
             else if (this.commandOverride.type === 'attack' && this.commandOverride.target) { ctx.lineTo(this.commandOverride.target.pos.x - this.pos.x, this.commandOverride.target.pos.y - this.pos.y); ctx.strokeStyle = 'rgba(139,43,43,0.6)'; ctx.lineWidth=3; ctx.stroke(); }
             ctx.rotate(this.angle);
         }
@@ -1731,6 +2058,12 @@ class Ship extends Entity {
         if (this.overdriveTimer > 0 && !isMenu) {
             ctx.beginPath(); ctx.arc(0, 0, rad + 8, 0, Math.PI*2);
             ctx.strokeStyle = '#ffaa00'; ctx.lineWidth = 2; ctx.stroke();
+        }
+        
+        // Staging visual
+        if (this.stagingState && !isMenu) {
+            ctx.beginPath(); ctx.arc(0, 0, rad + 10, 0, Math.PI*2);
+            ctx.strokeStyle = '#ffd700'; ctx.lineWidth = 1; ctx.setLineDash([3, 3]); ctx.stroke(); ctx.setLineDash([]);
         }
 
         let isDamaged = this.hp < this.maxHp * 0.5;
@@ -1827,14 +2160,27 @@ function buildAIFleet(centerX, MSY, faction, style, customPts) {
     let classes = Object.keys(SHIP_CLASSES);
     let pts = customPts || (200 * skirmishConfig.difficulty);
     let spawned = 0;
-    while(pts > 10 && spawned < 5) {
+    let currentCount = getFleetCount(faction.id);
+    let maxCanSpawn = MAX_FLEET_PER_SIDE - currentCount;
+    
+    while(pts > 10 && spawned < Math.min(5, maxCanSpawn)) {
         let cls = classes[Math.floor(Math.random()*classes.length)];
         if (style === 'Overwhelmer' && Math.random() < 0.6) cls = 'Interceptor';
         if (style === 'Turtle' && Math.random() < 0.4) cls = 'Support';
         
         let c = SHIP_CLASSES[cls].cost;
         if(pts >= c) {
-            entities.push(new Ship(centerX + randomRange(-300, 300), MSY + randomRange(-100, 100), faction, cls));
+            let ship = new Ship(centerX + randomRange(-300, 300), MSY + randomRange(-100, 100), faction, cls);
+            // Reinforcements enter staging state
+            if (battlePhase === 'engagement' || battlePhase === 'tactical' || battlePhase === 'endgame') {
+                let ms = entities.find(e => e.type === 'MotherShip' && e.faction.id === faction.id);
+                if (ms) {
+                    ship.stagingState = true;
+                    ship.stagingRallyPoint = new Vector(ms.pos.x + randomRange(-200, 200), ms.pos.y + (faction.id === 1 ? 100 : -100));
+                    ship.inFormation = false;
+                }
+            }
+            entities.push(ship);
             pts -= c; spawned++;
         }
     }
@@ -1844,10 +2190,17 @@ function initGame() {
     entities = []; particles = []; lasers = []; obstacles = []; capturePoints = [];
     playerEnergy = 10; timeScale = 1.0; cinematicTimer = 0;
     playerMorale = 100; enemyMorale = 100;
-    dominanceTracker = { side: 0, timer: 0 };
     formationLocked = false;
     playerFormation = 'line';
     enemyFormation = 'line';
+    playerDiscipline = 'loose';
+    enemyDiscipline = 'balanced';
+    playerFormationAnchor = null;
+    enemyFormationAnchor = null;
+    playerStagingActive = false;
+    enemyStagingActive = false;
+    centerTerritory = null;
+    territoryHoldTimer = { side: 0, frames: 0 };
     matchStats = { startTime: Date.now(), kills: 0, lost: 0, totalDamageDealt: 0 };
     
     let cBanner = document.getElementById('cinematic-banner');
@@ -1862,6 +2215,10 @@ function initGame() {
         for(let i=0; i<currentWorldSize/200; i++) obstacles.push(new Obstacle(Math.random() * currentWorldSize, Math.random() * currentWorldSize, randomRange(40, 90), 'asteroid'));
         for(let i=0; i<3; i++) capturePoints.push(new CapturePoint(randomRange(1000, currentWorldSize-1000), randomRange(1000, currentWorldSize-1000), 'refinery'));
     }
+    
+    // Always add center territory for win condition
+    centerTerritory = new CapturePoint(currentWorldSize / 2, currentWorldSize / 2, 'center_territory');
+    capturePoints.push(centerTerritory);
 
     const centerX = currentWorldSize / 2; const playerMSY = currentWorldSize - 400; const enemyMSY = 400;
 
@@ -1873,10 +2230,15 @@ function initGame() {
         buildAIFleet(eX, enemyMSY, getEnemyFaction(), skirmishConfig.aiProfile);
     }
 
+    // Enforce fleet cap on initial build
+    let shipCount = 0;
     for (let cls in profileData.fleetBuild) {
         for(let i=0; i<profileData.fleetBuild[cls]; i++) {
+            if (shipCount >= MAX_FLEET_PER_SIDE) break;
             entities.push(new Ship(centerX + randomRange(-300, 300), playerMSY + randomRange(-150, 50), getPlayerFaction(), cls));
+            shipCount++;
         }
+        if (shipCount >= MAX_FLEET_PER_SIDE) break;
     }
     
     setupAbilitiesUI();
@@ -1884,18 +2246,21 @@ function initGame() {
     
     // Start preparation phase
     battlePhase = 'preparation';
-    prepTimerFrames = PREP_DURATION_SECONDS * 60; // 60fps
+    prepTimerFrames = PREP_DURATION_SECONDS * 60;
     
-    // Show prep overlay
     let prepOvl = document.getElementById('prep-overlay');
     if (prepOvl) prepOvl.classList.add('active');
     
-    // Apply default formation
-    applyFormationToFleet(1, playerFormation);
-    applyFormationToFleet(2, 'line'); // Enemy starts in line during prep
+    // Set initial formation anchors
+    playerFormationAnchor = new Vector(centerX, playerMSY - 300);
+    enemyFormationAnchor = new Vector(centerX, enemyMSY + 300);
     
-    // Hide battle timer during prep
+    applyFormationToFleet(1, playerFormation);
+    applyFormationToFleet(2, 'line');
+    
     let timerHud = document.getElementById('battle-timer-hud'); if(timerHud) timerHud.style.display = 'none';
+    let fleetHud = document.getElementById('fleet-counter-hud'); if(fleetHud) fleetHud.style.display = 'none';
+    let terrHud = document.getElementById('territory-hud'); if(terrHud) terrHud.style.display = 'none';
 }
 
 function setupAbilitiesUI() {
@@ -1922,6 +2287,13 @@ function useAbility(slot) {
     }
 
     if (playerEnergy < cost) return;
+    
+    // Fleet cap check for spawn actions
+    if ((action === 'spawn' || action === 'spawn_fleet') && !canSpawnShip(1)) {
+        showNotification('Fleet cap reached! (' + MAX_FLEET_PER_SIDE + '/' + MAX_FLEET_PER_SIDE + ')');
+        return;
+    }
+    
     playerEnergy -= cost;
 
     if (action === 'emp') {
@@ -1930,13 +2302,29 @@ function useAbility(slot) {
     } else if (action === 'armor') {
         entities.forEach(e => { if (e.faction.id === 1 && !e.isDead) e.shieldTimer = 300; });
     } else if (action === 'spawn') {
-        for(let i=0; i<3; i++) entities.push(new Ship(pMS.pos.x+randomRange(-100,100), pMS.pos.y+randomRange(-100,100), getPlayerFaction(), 'Interceptor'));
-    } else if (action === 'spawn_fleet') {
+        let spawned = 0;
         for(let i=0; i<3; i++) {
-            let cl = Math.random() > 0.5 ? 'Frigate' : 'Destroyer';
-            entities.push(new Ship(pMS.pos.x+randomRange(-150,150), pMS.pos.y+randomRange(-150,150), getPlayerFaction(), cl));
+            if (!canSpawnShip(1)) break;
+            let ship = new Ship(pMS.pos.x+randomRange(-100,100), pMS.pos.y+randomRange(-100,100), getPlayerFaction(), 'Interceptor');
+            ship.stagingState = true;
+            ship.stagingRallyPoint = new Vector(pMS.pos.x + randomRange(-150, 150), pMS.pos.y + 100);
+            ship.inFormation = false;
+            entities.push(ship);
+            spawned++;
         }
-        showNotification("Reinforcements Deployed");
+    } else if (action === 'spawn_fleet') {
+        let spawned = 0;
+        for(let i=0; i<3; i++) {
+            if (!canSpawnShip(1)) break;
+            let cl = Math.random() > 0.5 ? 'Frigate' : 'Destroyer';
+            let ship = new Ship(pMS.pos.x+randomRange(-150,150), pMS.pos.y+randomRange(-150,150), getPlayerFaction(), cl);
+            ship.stagingState = true;
+            ship.stagingRallyPoint = new Vector(pMS.pos.x + randomRange(-150, 150), pMS.pos.y + 100);
+            ship.inFormation = false;
+            entities.push(ship);
+            spawned++;
+        }
+        showNotification("Reinforcements staging (" + spawned + " ships)");
         updateFleetUI();
     } else if (action === 'heal') {
         createExplosion(pMS.pos.x, pMS.pos.y, '#0f0', 30, 10);
@@ -1968,7 +2356,6 @@ function applySelection() {
     });
     if (clicked) {
         clicked.selected = true;
-        // Double-click detection for single ship command menu
         if (clicked._lastClickTime && Date.now() - clicked._lastClickTime < 400) {
             openShipCommandMenu(clicked, mouse.screenX, mouse.screenY);
         }
@@ -1985,9 +2372,11 @@ function handleRightClick(x, y) {
     let offset = 0;
     entities.forEach(e => {
         if (e.faction.id === 1 && e.selected && !e.isDead) {
-            e.ambushMode = false; e.guardRadius = 0; e.weaponsDisabled = false; // Clear special modes
-            if (target) { e.commandOverride = { type: 'attack', target: target }; createExplosion(e.pos.x, e.pos.y, '#fff', 2, 2); } 
-            else { let tx = x + (offset * 30); e.commandOverride = { type: 'move', pos: new Vector(tx, y) }; offset = offset > 0 ? -offset : -offset + 1; createExplosion(tx, y, '#e6ddc5', 3, 3); }
+            e.ambushMode = false; e.guardRadius = 0; e.weaponsDisabled = false;
+            e.commandPersistent = true; // Right-click commands persist
+            e.inFormation = false; // Break formation for manual commands
+            if (target) { e.commandOverride = { type: 'attack', target: target, persistent: true }; createExplosion(e.pos.x, e.pos.y, '#fff', 2, 2); } 
+            else { let tx = x + (offset * 30); e.commandOverride = { type: 'move', pos: new Vector(tx, y), persistent: true }; offset = offset > 0 ? -offset : -offset + 1; createExplosion(tx, y, '#e6ddc5', 3, 3); }
         }
     });
 }
@@ -2000,9 +2389,15 @@ function commandSelected(type) {
     let hasSel = entities.some(e => e.selected && e.faction.id === 1);
     entities.forEach(e => {
         if (e.faction.id === 1 && e.type === 'Ship' && !e.isDead && (!hasSel || e.selected)) {
-            if (type === 'defend' && pMS) e.commandOverride = { type: 'move', pos: new Vector(pMS.pos.x + randomRange(-200, 200), pMS.pos.y + randomRange(-200, 200)) };
-            else if (type === 'assault' && eMS) e.commandOverride = { type: 'attack', target: eMS };
-            else if (type === 'retreat') e.commandOverride = { type: 'move', pos: new Vector(e.pos.x, currentWorldSize - 200) };
+            e.commandPersistent = true;
+            if (type === 'defend' && pMS) { 
+                e.commandOverride = { type: 'move', pos: new Vector(pMS.pos.x + randomRange(-200, 200), pMS.pos.y + randomRange(-200, 200)), persistent: true };
+            }
+            else if (type === 'assault' && eMS) { 
+                e.commandOverride = { type: 'attack', target: eMS, persistent: true }; 
+                e.inFormation = false;
+            }
+            else if (type === 'retreat') e.commandOverride = { type: 'move', pos: new Vector(e.pos.x, currentWorldSize - 200), persistent: true };
         }
     });
 }
@@ -2018,7 +2413,6 @@ function updatePrepPhase() {
     if (timerDisplay) timerDisplay.innerText = secondsLeft;
     
     if (prepTimerFrames <= 0) {
-        // Auto-lock formation
         lockFormation();
     }
 }
@@ -2027,18 +2421,15 @@ function updatePrepPhase() {
 function updateMorale() {
     if (battlePhase !== 'engagement' && battlePhase !== 'tactical' && battlePhase !== 'endgame') return;
     
-    // Morale slowly recovers over time
     playerMorale = Math.min(100, playerMorale + 0.01);
     enemyMorale = Math.min(100, enemyMorale + 0.01);
     
-    // MS health affects morale
     let pMS = entities.find(e => e.type === 'MotherShip' && e.faction.id === 1 && !e.isDead);
     let eMS = entities.find(e => e.type === 'MotherShip' && e.faction.id === 2 && !e.isDead);
     
     if (pMS && pMS.hp < pMS.maxHp * 0.3) playerMorale = Math.max(0, playerMorale - 0.05);
     if (eMS && eMS.hp < eMS.maxHp * 0.3) enemyMorale = Math.max(0, enemyMorale - 0.05);
     
-    // Update morale HUD
     let moraleBar = document.getElementById('morale-bar');
     if (moraleBar) {
         moraleBar.style.width = playerMorale + '%';
@@ -2074,7 +2465,48 @@ function updateUI() {
     let btn1 = document.getElementById('btn-abil-1'); if(btn1) btn1.disabled = enReady < (t==='Tactical'?30:40) || !pMS || pMS.isDead;
     let btn2 = document.getElementById('btn-abil-2'); if(btn2) btn2.disabled = enReady < (t==='Tactical'?50:60) || !pMS || pMS.isDead;
     let btn3 = document.getElementById('btn-abil-3'); if(btn3) btn3.disabled = enReady < (t==='Tactical'?70:(t==='Offensive'?80:90)) || !pMS || pMS.isDead;
-    let btnSpawn = document.getElementById('btn-spawn-fleet'); if(btnSpawn) btnSpawn.disabled = enReady < 60 || !pMS || pMS.isDead;
+    
+    // Reinforcement button: disable when at fleet cap
+    let btnSpawn = document.getElementById('btn-spawn-fleet'); 
+    if (btnSpawn) {
+        let atCap = !canSpawnShip(1);
+        btnSpawn.disabled = enReady < 60 || !pMS || pMS.isDead || atCap;
+        btnSpawn.innerText = atCap ? 'FLEET CAP REACHED' : 'Construct Wing (60 KW)';
+    }
+    
+    // Fleet counter HUD
+    let fleetHud = document.getElementById('fleet-counter-hud');
+    if (fleetHud && (battlePhase === 'engagement' || battlePhase === 'tactical' || battlePhase === 'endgame')) {
+        let pCount = getFleetCount(1);
+        fleetHud.innerText = `Fleet: ${pCount} / ${MAX_FLEET_PER_SIDE}`;
+        fleetHud.style.color = pCount >= MAX_FLEET_PER_SIDE ? '#8b2b2b' : '#1a1817';
+    }
+    
+    // Territory HUD
+    if (centerTerritory && (battlePhase === 'engagement' || battlePhase === 'tactical' || battlePhase === 'endgame')) {
+        let tBarP = document.getElementById('territory-bar-player');
+        let tBarE = document.getElementById('territory-bar-enemy');
+        let tStatus = document.getElementById('territory-status');
+        if (tBarP && tBarE && tStatus) {
+            if (centerTerritory.progress > 0) {
+                tBarP.style.width = (centerTerritory.progress / 100 * 50) + '%';
+                tBarP.style.background = profileData.colorAccent;
+                tBarE.style.width = '0%';
+            } else if (centerTerritory.progress < 0) {
+                tBarE.style.width = (Math.abs(centerTerritory.progress) / 100 * 50) + '%';
+                tBarE.style.background = currentTheme === 'oasis' ? '#ff007f' : '#8b2b2b';
+                tBarP.style.width = '0%';
+            } else {
+                tBarP.style.width = '0%';
+                tBarE.style.width = '0%';
+            }
+            
+            if (centerTerritory.owner === 1) tStatus.innerText = 'PLAYER CONTROLLED';
+            else if (centerTerritory.owner === 2) tStatus.innerText = 'ENEMY CONTROLLED';
+            else tStatus.innerText = 'CONTESTED';
+            tStatus.style.color = centerTerritory.owner === 1 ? profileData.colorAccent : (centerTerritory.owner === 2 ? '#8b2b2b' : '#888');
+        }
+    }
     
     // Battle timer HUD
     if (battlePhase === 'engagement' || battlePhase === 'tactical' || battlePhase === 'endgame') {
@@ -2116,8 +2548,11 @@ function updateFleetUI() {
         let selBg = s.selected ? 'bg-black bg-opacity-20' : '';
         let targetText = s.state;
         if (s.state === 'Fleeing') targetText = 'RETREATING!';
+        if (s.state === 'FormationHold') targetText = 'FORMATION';
+        if (s.stagingState) targetText = 'STAGING';
         if (s.ambushMode) targetText = 'AMBUSH';
         if (s.weaponsDisabled) targetText += ' [WPN OFF]';
+        if (s.cohesionPenalty > 0.2) targetText += ' [LOW COH]';
         html += `<div class="border-b border-gray-400 pb-1 mb-1 ${selBg}">
             <div class="flex justify-between"><span>${s.shipClass.substring(0,3).toUpperCase()}-${s.id.substring(0,3)}</span><span class="${hpColor}">${Math.floor(s.hp)} HP</span></div>
             <div class="text-[10px] text-gray-700 font-normal">${targetText}</div>
@@ -2132,7 +2567,19 @@ function drawMinimap() {
     let vx = (camera.x - width/2/camera.zoom) * scale; let vy = (camera.y - height/2/camera.zoom) * scale;
     let vw = (width / camera.zoom) * scale; let vh = (height / camera.zoom) * scale;
     mmCtx.strokeStyle = 'rgba(255,255,255,0.5)'; mmCtx.strokeRect(vx, vy, vw, vh);
+    
+    // Draw center territory on minimap
+    if (centerTerritory) {
+        let tx = centerTerritory.pos.x * scale;
+        let ty = centerTerritory.pos.y * scale;
+        mmCtx.strokeStyle = centerTerritory.owner === 1 ? profileData.colorAccent : (centerTerritory.owner === 2 ? '#8b2b2b' : '#888');
+        mmCtx.lineWidth = 2;
+        mmCtx.beginPath(); mmCtx.arc(tx, ty, 8, 0, Math.PI*2); mmCtx.stroke();
+        mmCtx.lineWidth = 1;
+    }
+    
     capturePoints.forEach(c => {
+        if (c === centerTerritory) return; // Already drawn
         mmCtx.fillStyle = c.owner===1 ? profileData.colorAccent : (c.owner===2 ? (currentTheme==='oasis'?'#ff007f':'#8b2b2b') : '#fff');
         mmCtx.fillRect(c.pos.x*scale - 2, c.pos.y*scale - 2, 4, 4);
     });
@@ -2173,39 +2620,19 @@ function checkWinConditions() {
     
     let pMS = entities.find(e => e.type === 'MotherShip' && e.faction.id === 1 && !e.isDead);
     let eMS = entities.find(e => e.type === 'MotherShip' && e.faction.id === 2 && !e.isDead);
-    let playerShips = entities.filter(e => e.faction.id === 1 && e.type === 'Ship' && !e.isDead);
-    let enemyShips = entities.filter(e => e.faction.id === 2 && e.type === 'Ship' && !e.isDead);
     
-    // --- DOMINANCE CHECK (early victory) ---
-    // Must have 20+ ship lead AND enemy below 30% of max allowed fleet AND sustained for 30 seconds
-    let pCount = playerShips.length;
-    let eCount = enemyShips.length;
-    let maxFleet = 200 / 15; // rough max fleet (~13 ships at cheapest)
-    let maxAllowed = Math.ceil(maxFleet * skirmishConfig.difficulty) + 5; // generous estimate
-    
-    let shipDiff = pCount - eCount;
-    let enemyBelowThreshold = eCount < maxAllowed * 0.3;
-    let playerDominant = shipDiff >= 20 && enemyBelowThreshold;
-    
-    let shipDiffE = eCount - pCount;
-    let playerBelowThreshold = pCount < maxAllowed * 0.3;
-    let enemyDominant = shipDiffE >= 20 && playerBelowThreshold;
-    
-    let dominantSide = playerDominant ? 1 : (enemyDominant ? 2 : 0);
-    
-    if (dominantSide > 0 && dominantSide === dominanceTracker.side) {
-        dominanceTracker.timer++;
-        if (dominanceTracker.timer >= 30 * 60) { // 30 seconds at 60fps (checked every 60 frames, so 30 checks)
-            let playerWon = dominantSide === 1;
-            let banner = document.getElementById('cinematic-banner');
-            if (banner) { banner.classList.add('show'); banner.innerText = 'OVERWHELMING VICTORY'; banner.style.color = playerWon ? profileData.colorAccent : (currentTheme === 'oasis' ? '#ff007f' : '#8b2b2b'); }
-            cinematicTimer = 90; timeScale = 0.2;
-            setTimeout(() => endGame(playerWon, false, playerWon ? 'Overwhelming Victory' : 'Overwhelming Defeat'), 3000);
-            return;
+    // --- TERRITORY WIN: Hold center territory when timer ends ---
+    if (centerTerritory) {
+        if (centerTerritory.owner === 1) {
+            territoryHoldTimer.side = 1;
+            territoryHoldTimer.frames++;
+        } else if (centerTerritory.owner === 2) {
+            territoryHoldTimer.side = 2;
+            territoryHoldTimer.frames++;
+        } else {
+            territoryHoldTimer.side = 0;
+            territoryHoldTimer.frames = 0;
         }
-    } else {
-        dominanceTracker.side = dominantSide;
-        dominanceTracker.timer = dominantSide > 0 ? 1 : 0;
     }
     
     // --- TIME LIMIT ---
@@ -2213,29 +2640,28 @@ function checkWinConditions() {
     if (elapsed >= battleTimeLimitMs) {
         let playerWon, isDraw, title;
         
-        // Compare: fleet count, MS health, total damage
-        let pHp = pMS ? pMS.hp : 0;
-        let eHp = eMS ? eMS.hp : 0;
-        
-        let playerAdvantages = 0, enemyAdvantages = 0;
-        
-        // Fleet count
-        if (pCount > eCount) playerAdvantages++; else if (eCount > pCount) enemyAdvantages++;
-        // MS health
-        if (pHp > eHp) playerAdvantages++; else if (eHp > pHp) enemyAdvantages++;
-        // Total damage dealt (kills as proxy)
-        if (matchStats.kills > matchStats.lost) playerAdvantages++; else if (matchStats.lost > matchStats.kills) enemyAdvantages++;
-        
-        if (playerAdvantages > enemyAdvantages) {
+        // Primary: who holds the center territory?
+        if (centerTerritory && centerTerritory.owner === 1) {
             playerWon = true; isDraw = false;
-            title = pCount > eCount ? 'Fleet Dominance Victory' : 'Strategic Victory';
-        } else if (enemyAdvantages > playerAdvantages) {
+            title = 'Territory Control Victory';
+        } else if (centerTerritory && centerTerritory.owner === 2) {
             playerWon = false; isDraw = false;
-            title = eCount > pCount ? 'Defeat - Outnumbered' : 'Strategic Defeat';
+            title = 'Defeat - Territory Lost';
         } else {
-            // Very close = Contested Outcome
-            playerWon = false; isDraw = true;
-            title = 'Contested Outcome';
+            // Contested: compare MS health as tiebreaker
+            let pHp = pMS ? pMS.hp : 0;
+            let eHp = eMS ? eMS.hp : 0;
+            
+            if (pHp > eHp * 1.1) {
+                playerWon = true; isDraw = false;
+                title = 'Strategic Victory';
+            } else if (eHp > pHp * 1.1) {
+                playerWon = false; isDraw = false;
+                title = 'Strategic Defeat';
+            } else {
+                playerWon = false; isDraw = true;
+                title = 'Contested Outcome';
+            }
         }
         
         let banner = document.getElementById('cinematic-banner');
@@ -2280,10 +2706,11 @@ function endGame(playerWon, forceExit=false, customTitle=null) {
     entities.forEach(e => { e.disabledTimer = 99999; });
     timeScale = 0.0;
     
-    // Hide prep and timer overlays
     let prepOvl = document.getElementById('prep-overlay'); if(prepOvl) prepOvl.classList.remove('active');
     let timerHud = document.getElementById('battle-timer-hud'); if(timerHud) timerHud.style.display = 'none';
     let moraleHud = document.getElementById('morale-hud'); if(moraleHud) moraleHud.style.display = 'none';
+    let fleetHud = document.getElementById('fleet-counter-hud'); if(fleetHud) fleetHud.style.display = 'none';
+    let terrHud = document.getElementById('territory-hud'); if(terrHud) terrHud.style.display = 'none';
     hideCommandMenu();
 
     setTimeout(() => {
@@ -2293,6 +2720,7 @@ function endGame(playerWon, forceExit=false, customTitle=null) {
         
         entities = []; particles = []; lasers = []; obstacles = []; capturePoints = [];
         playerEnergy = 0;
+        centerTerritory = null;
         
         document.querySelectorAll('.menu-screen').forEach(el => el.classList.remove('active'));
         let aar = document.getElementById('menu-aar'); if(aar) aar.classList.add('active');
@@ -2386,12 +2814,22 @@ function gameLoop() {
 
         let updateLogic = (gameState === 'playing' || cinematicTimer > 0);
 
-        // Update prep phase
         if (updateLogic) updatePrepPhase();
         if (updateLogic && frameCount % 3 === 0) updateMorale();
 
         obstacles.forEach(o => o.draw(ctx));
         capturePoints.forEach(c => { if(updateLogic) c.update(); c.draw(ctx); });
+        
+        // Draw formation radius indicator during engagement
+        if (gameState === 'playing' && playerFormationAnchor && (battlePhase === 'engagement' || battlePhase === 'tactical' || battlePhase === 'endgame')) {
+            ctx.beginPath();
+            ctx.arc(playerFormationAnchor.x, playerFormationAnchor.y, FORMATION_RADIUS, 0, Math.PI * 2);
+            ctx.strokeStyle = 'rgba(0, 128, 128, 0.15)';
+            ctx.lineWidth = 2;
+            ctx.setLineDash([20, 20]);
+            ctx.stroke();
+            ctx.setLineDash([]);
+        }
         
         for (let i = entities.length - 1; i >= 0; i--) {
             let e = entities[i]; if (updateLogic) e.update(); e.draw(ctx);
