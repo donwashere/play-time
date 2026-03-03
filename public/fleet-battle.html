@@ -80,6 +80,19 @@
         /* Discipline selector in prep */
         #discipline-selector { pointer-events: auto; margin-top: 10px; }
 
+        /* Tooltip styles */
+        .cmd-tooltip { position: absolute; z-index: 200; background: #1a1817; color: #f4f1eb; padding: 10px 14px; border: 2px solid #d4c575; font-size: 0.75rem; max-width: 220px; pointer-events: none; box-shadow: 4px 4px 0 rgba(0,0,0,0.6); font-family: 'Special Elite', cursive; line-height: 1.4; }
+        .cmd-tooltip .tt-title { font-size: 0.85rem; font-weight: bold; color: #d4c575; margin-bottom: 4px; text-transform: uppercase; letter-spacing: 1px; }
+        .cmd-tooltip .tt-strength { color: #4ade80; }
+        .cmd-tooltip .tt-weakness { color: #f87171; }
+        .cmd-tooltip .tt-usage { color: #93c5fd; font-style: italic; }
+
+        /* Doctrine Planner in Dockyard */
+        .doctrine-card { background: #f4f1eb; border: 3px solid #1a1817; padding: 8px; cursor: pointer; position: relative; transition: all 0.1s; box-shadow: 3px 3px 0 rgba(0,0,0,0.5); }
+        .doctrine-card:hover { background: #d4c575; transform: translate(1px,1px); box-shadow: 1px 1px 0 rgba(0,0,0,0.5); }
+        .doctrine-card.selected { background: #d4c575; border-color: #8b2b2b; }
+        .doctrine-card .scribble-line { position: absolute; opacity: 0.3; }
+
     </style>
 </head>
 <body>
@@ -122,6 +135,8 @@
         <div class="text-iron text-sm mb-1" id="cmd-menu-title">ORDERS</div>
         <div class="cmd-grid" id="cmd-menu-buttons"></div>
     </div>
+    <!-- TOOLTIP -->
+    <div id="cmd-tooltip" class="cmd-tooltip" style="display:none; position:fixed; z-index:300;"></div>
 
     <!-- BATTLE TIMER HUD -->
     <div id="battle-timer-hud" style="display:none;"></div>
@@ -175,6 +190,12 @@
                 <option value="default">Default</option>
                 <option value="reversed">Reversed (Minimap Left)</option>
             </select>
+            
+            <div class="flex items-center mt-4 mb-2">
+                <input type="checkbox" id="cfg-tooltips" checked class="mr-2 w-5 h-5" onchange="tooltipsEnabled = this.checked;">
+                <label class="font-bold text-sm">Show Command Tooltips</label>
+            </div>
+            
             <div class="flex space-x-2 mt-8">
                 <button class="btn py-3 bg-gray-400" onclick="switchMenu('main')">Back</button>
             </div>
@@ -234,7 +255,7 @@
         </div>
 
         <!-- FLEET CUSTOMIZATION -->
-        <div id="menu-customize" class="steampunk-panel w-[500px] p-8 menu-screen">
+        <div id="menu-customize" class="steampunk-panel w-[600px] p-8 menu-screen" style="max-height:90vh; overflow-y:auto;">
             <div class="text-iron text-xl text-center mb-4">DOCKYARD CUSTOMIZATION</div>
             <label class="font-bold text-sm">Fleet Designation</label>
             <input type="text" id="cust-name" value="Allied Steam Carrier">
@@ -258,6 +279,19 @@
                     </select>
                 </div>
             </div>
+            
+            <!-- STRATEGIC DOCTRINE PLANNER -->
+            <div class="text-iron text-lg text-center mt-4 mb-2">STRATEGIC DOCTRINE PLANNER</div>
+            <div style="background:#f4f1eb; border:3px solid #1a1817; padding:12px; position:relative; overflow:hidden;">
+                <!-- Scribbled football tactic background -->
+                <canvas id="doctrine-canvas" width="540" height="200" style="position:absolute; top:0; left:0; width:100%; height:200px; opacity:0.15; pointer-events:none;"></canvas>
+                <div class="text-center text-xs font-bold mb-2" style="color:#8b2b2b; letter-spacing:3px; position:relative; z-index:1;">PRE-BATTLE BEHAVIOR SCRIPT</div>
+                <div class="grid grid-cols-2 gap-2" id="doctrine-cards" style="position:relative; z-index:1;">
+                    <!-- Populated by JS -->
+                </div>
+                <div class="text-center text-[10px] mt-2 font-bold" id="doctrine-desc" style="position:relative; z-index:1;">Select a doctrine for auto-fleet behavior</div>
+            </div>
+            
             <div class="flex space-x-2 mt-6">
                 <button class="btn py-3 bg-gray-400" onclick="switchMenu('main')">Discard</button>
                 <button class="btn py-3" style="background: #d4c575;" onclick="saveCustomization()">Save Changes</button>
@@ -394,29 +428,30 @@ const FORMATIONS = {
 };
 
 const SINGLE_SHIP_COMMANDS = [
-    { id: 'hold', label: 'Hold Position', desc: 'Ship stays in place' },
-    { id: 'intercept', label: 'Intercept', desc: 'Chase nearest enemy' },
-    { id: 'protect', label: 'Protect Ally', desc: 'Guard nearby ally' },
-    { id: 'focusfire', label: 'Focus Fire', desc: 'Attack current target' },
-    { id: 'retreat', label: 'Retreat', desc: 'Fall back to MS' },
-    { id: 'overdrive', label: 'Overdrive', desc: 'Boost speed temporarily' },
-    { id: 'disable_wpn', label: 'Disable Weapons', desc: 'Stop firing, focus move' },
-    { id: 'guard_area', label: 'Guard Area', desc: 'Patrol current zone' },
-    { id: 'ambush', label: 'Ambush Mode', desc: 'Hide and wait' },
-    { id: 'repair', label: 'Repair Mode', desc: 'Support ships heal' }
+    { id: 'hold', label: 'Hold Position', desc: 'Ship stays in place', strength: 'Holds key chokepoints.', weakness: 'Vulnerable to flanking.', usage: 'Use when defending a fixed area.' },
+    { id: 'intercept', label: 'Intercept', desc: 'Chase nearest enemy', strength: 'Neutralizes approaching threats fast.', weakness: 'Leaves formation.', usage: 'Use against lone targets.' },
+    { id: 'protect', label: 'Protect Ally', desc: 'Guard nearby ally', strength: 'Keeps key ships alive.', weakness: 'Ship becomes reactive, not proactive.', usage: 'Assign to guard Support ships.' },
+    { id: 'focusfire', label: 'Focus Fire', desc: 'Attack current target', strength: 'Fast target elimination.', weakness: 'Ignores other threats.', usage: 'Use to finish damaged enemies.' },
+    { id: 'retreat', label: 'Retreat', desc: 'Fall back to MS', strength: 'Saves damaged ships.', weakness: 'Reduces combat power temporarily.', usage: 'Use when ship is low HP.' },
+    { id: 'overdrive', label: 'Overdrive', desc: 'Boost speed temporarily', strength: 'Rapid repositioning.', weakness: 'Temporary, then back to normal.', usage: 'Use for surprise flanks.' },
+    { id: 'disable_wpn', label: 'Disable Weapons', desc: 'Stop firing, focus move', strength: 'Faster repositioning.', weakness: 'Cannot fight.', usage: 'Use to relocate safely.' },
+    { id: 'guard_area', label: 'Guard Area', desc: 'Patrol current zone', strength: 'Controls a zone passively.', weakness: 'Won\'t pursue outside radius.', usage: 'Use on capture points.' },
+    { id: 'ambush', label: 'Ambush Mode', desc: 'Hide and wait', strength: 'Surprise attack advantage.', weakness: 'Immobile until triggered.', usage: 'Place on enemy approach routes.' },
+    { id: 'repair', label: 'Repair Mode', desc: 'Support ships heal', strength: 'Keeps fleet sustained.', weakness: 'Support ship is exposed.', usage: 'Use during lulls in combat.' }
 ];
 
 const FLEET_COMMANDS = [
-    { id: 'advance', label: 'Advance', desc: 'Move fleet forward' },
-    { id: 'holdline', label: 'Hold Line', desc: 'Stop and hold position' },
-    { id: 'assault', label: 'Full Assault', desc: 'All-out attack on enemy MS' },
-    { id: 'defensive', label: 'Defensive Stance', desc: 'Pull back to MS' },
-    { id: 'flankleft', label: 'Flank Left', desc: 'Move fleet left' },
-    { id: 'flankright', label: 'Flank Right', desc: 'Move fleet right' },
-    { id: 'encircle', label: 'Encircle', desc: 'Surround enemy fleet' },
-    { id: 'divide', label: 'Divide & Engage', desc: 'Split and attack multiple targets' },
-    { id: 'defend', label: 'Protect Mother Ship', desc: 'Rally around carrier' },
-    { id: 'regroup', label: 'Regroup', desc: 'Reform formation near MS' }
+    { id: 'advance', label: 'Advance', desc: 'Move fleet forward', strength: 'Gains territory and pressure.', weakness: 'Exposed to ambush.', usage: 'Use when you have fleet advantage.' },
+    { id: 'holdline', label: 'Hold Line', desc: 'Maintain formation toward objective', strength: 'Keeps cohesion and discipline.', weakness: 'Slower to react to flanks.', usage: 'Use to hold captured territory.' },
+    { id: 'assault', label: 'Full Assault', desc: 'All-out attack on enemy MS', strength: 'Strong against weakened enemies.', weakness: 'Weak to flanking and morale collapse.', usage: 'Use when enemy fleet is depleted.' },
+    { id: 'defensive', label: 'Defensive Stance', desc: 'Pull back to MS', strength: 'MS aura heals ships.', weakness: 'Cedes territory.', usage: 'Use when low on ships.' },
+    { id: 'flankleft', label: 'Flank Left', desc: 'Move fleet left', strength: 'Bypasses front defenses.', weakness: 'Splits from main body.', usage: 'Use to expose enemy rear.' },
+    { id: 'flankright', label: 'Flank Right', desc: 'Move fleet right', strength: 'Bypasses front defenses.', weakness: 'Splits from main body.', usage: 'Use to expose enemy rear.' },
+    { id: 'encircle', label: 'Encircle', desc: 'Surround enemy fleet', strength: 'Max damage from all sides.', weakness: 'Ships spread thin.', usage: 'Use with large fleet advantage.' },
+    { id: 'divide', label: 'Divide & Engage', desc: 'Split and attack multiple targets', strength: 'Handles multiple threats.', weakness: 'Weakened individual groups.', usage: 'Use vs spread-out enemies.' },
+    { id: 'defend', label: 'Protect Mother Ship', desc: 'Rally around carrier', strength: 'Max defense for MS.', weakness: 'Loses map control.', usage: 'Use when MS is under attack.' },
+    { id: 'regroup', label: 'Regroup', desc: 'Reform formation near MS', strength: 'Restores cohesion.', weakness: 'Temporary retreat.', usage: 'Use after losses or chaos.' },
+    { id: 'reinforce_fallen', label: 'Reinforce Fallen', desc: 'Replace lost ships without recall', strength: 'Maintains momentum.', weakness: 'Costs energy, new ships need staging.', usage: 'Use when fleet has gaps.' }
 ];
 
 // --- FLEET CAP ---
@@ -429,12 +464,32 @@ const DISCIPLINE_MODES = {
     'strict': { name: 'Strict', desc: 'No pursuit outside formation radius', pursuitRange: 0, cohesionPenalty: 0.6 }
 };
 
+// --- STRATEGIC DOCTRINES ---
+const STRATEGIC_DOCTRINES = {
+    'none': { name: 'No Doctrine', desc: 'Manual control only.', behavior: null },
+    'defensive_lock': { name: 'Defensive Lock', desc: 'Hold control zone. Prioritize closest threats. Never overextend.', behavior: 'defensive', icon: '🛡', strength: 'Strong zone control', weakness: 'Slow to push' },
+    'flanking_pressure': { name: 'Flanking Pressure', desc: 'Split outer fleets wide. Target enemy sides. Collapse inward.', behavior: 'flank', icon: '⚔', strength: 'Disrupts formations', weakness: 'Split forces' },
+    'aggressive_push': { name: 'Aggressive Push', desc: 'Advance continuously. Prioritize mothership once path open.', behavior: 'assault', icon: '🔥', strength: 'Fast victories', weakness: 'High casualties' },
+    'adaptive_counter': { name: 'Adaptive Counter', desc: 'Mirror enemy formation width. Focus weakest flank.', behavior: 'adaptive', icon: '🔄', strength: 'Counters any strategy', weakness: 'Reactive, not proactive' }
+};
+
+// --- TOOLTIP SETTINGS ---
+let tooltipsEnabled = true;
+
+// --- FACING AWARENESS ---
+const REAR_DAMAGE_MULTIPLIER = 1.5;
+
+// --- AI OBJECTIVE PRIORITY ---
+let aiDecisionTimer = 0;
+const AI_DECISION_INTERVAL = 150; // ~2.5 seconds at 60fps
+
 let profileData = {
     wins: 0, battles: 0, msDestroyed: 0, shipsLost: 0, xp: 0,
     fleetName: 'ALLIED STEAM CARRIER', colorAccent: '#008080',
     commanderTree: 'Tactical', layout: 'default', theme: 'retro',
     achievements: { timeWin: false, noLoss: false, lowHpWin: false },
-    fleetBuild: { 'Frigate': 4, 'Destroyer': 2, 'Siege': 1, 'Support': 1, 'Interceptor': 2 }
+    fleetBuild: { 'Frigate': 4, 'Destroyer': 2, 'Siege': 1, 'Support': 1, 'Interceptor': 2 },
+    doctrine: 'none'
 };
 
 let currentTheme = 'retro';
@@ -710,6 +765,7 @@ function switchMenu(target) {
             let cName = document.getElementById('cust-name'); if(cName) cName.value = profileData.fleetName; 
             let cColor = document.getElementById('cust-color'); if(cColor) cColor.value = profileData.colorAccent;
             let cCmd = document.getElementById('cust-commander'); if(cCmd) cCmd.value = profileData.commanderTree;
+            renderDoctrineCards();
         }
         if (target === 'skirmish') renderFleetBuilder();
     }
@@ -764,6 +820,81 @@ function saveCustomization() {
     let cColor = document.getElementById('cust-color'); if(cColor) profileData.colorAccent = cColor.value; 
     let cCmd = document.getElementById('cust-commander'); if(cCmd) profileData.commanderTree = cCmd.value; 
     saveProfile(); switchMenu('main'); 
+}
+
+// --- DOCTRINE PLANNER ---
+function renderDoctrineCards() {
+    let container = document.getElementById('doctrine-cards');
+    if (!container) return;
+    let html = '';
+    for (let key in STRATEGIC_DOCTRINES) {
+        let d = STRATEGIC_DOCTRINES[key];
+        if (key === 'none') continue;
+        let sel = profileData.doctrine === key ? 'selected' : '';
+        html += '<div class="doctrine-card ' + sel + '" onclick="selectDoctrine(\'' + key + '\')">';
+        html += '<div style="font-weight:bold; font-size:0.85rem;">' + (d.icon || '') + ' ' + d.name + '</div>';
+        html += '<div style="font-size:0.65rem; color:#555; margin-top:2px;">' + d.desc + '</div>';
+        if (d.strength) html += '<div style="font-size:0.6rem; color:#166534; margin-top:2px;">✓ ' + d.strength + '</div>';
+        if (d.weakness) html += '<div style="font-size:0.6rem; color:#991b1b;">✗ ' + d.weakness + '</div>';
+        html += '</div>';
+    }
+    container.innerHTML = html;
+    
+    // Draw scribbled tactic lines on canvas
+    drawDoctrineCanvas();
+}
+
+function selectDoctrine(key) {
+    profileData.doctrine = key;
+    let desc = document.getElementById('doctrine-desc');
+    if (desc) desc.innerText = STRATEGIC_DOCTRINES[key].name + ': ' + STRATEGIC_DOCTRINES[key].desc;
+    renderDoctrineCards();
+}
+
+function drawDoctrineCanvas() {
+    let c = document.getElementById('doctrine-canvas');
+    if (!c) return;
+    let ctx2 = c.getContext('2d');
+    ctx2.clearRect(0, 0, c.width, c.height);
+    ctx2.strokeStyle = '#1a1817';
+    ctx2.lineWidth = 2;
+    ctx2.setLineDash([5, 3]);
+    
+    // Draw football-style tactic scribbles
+    let cx = c.width / 2, cy = c.height / 2;
+    
+    // Center circle
+    ctx2.beginPath(); ctx2.arc(cx, cy, 40, 0, Math.PI*2); ctx2.stroke();
+    
+    // Center line
+    ctx2.beginPath(); ctx2.moveTo(0, cy); ctx2.lineTo(c.width, cy); ctx2.stroke();
+    
+    // Goal areas
+    ctx2.setLineDash([]);
+    ctx2.strokeRect(cx - 80, 0, 160, 40);
+    ctx2.strokeRect(cx - 80, c.height - 40, 160, 40);
+    
+    // Arrows for formations
+    ctx2.setLineDash([3, 3]);
+    ctx2.strokeStyle = '#8b2b2b';
+    ctx2.lineWidth = 3;
+    
+    // Scattered X marks for positions
+    let positions = [[cx-100, cy-50], [cx, cy-70], [cx+100, cy-50], [cx-60, cy+30], [cx+60, cy+30], [cx, cy+60]];
+    positions.forEach(p => {
+        ctx2.beginPath(); ctx2.moveTo(p[0]-6, p[1]-6); ctx2.lineTo(p[0]+6, p[1]+6); ctx2.stroke();
+        ctx2.beginPath(); ctx2.moveTo(p[0]+6, p[1]-6); ctx2.lineTo(p[0]-6, p[1]+6); ctx2.stroke();
+    });
+    
+    // Curved arrows
+    ctx2.beginPath();
+    ctx2.moveTo(cx-100, cy-50); ctx2.quadraticCurveTo(cx-150, cy-100, cx-60, cy-80);
+    ctx2.stroke();
+    ctx2.beginPath();
+    ctx2.moveTo(cx+100, cy-50); ctx2.quadraticCurveTo(cx+150, cy-100, cx+60, cy-80);
+    ctx2.stroke();
+    
+    ctx2.setLineDash([]);
 }
 
 function launchSkirmish() {
@@ -870,6 +1001,9 @@ function lockFormation() {
         let moraleHud = document.getElementById('morale-hud'); if(moraleHud) moraleHud.style.display = 'block';
         let fleetHud = document.getElementById('fleet-counter-hud'); if(fleetHud) fleetHud.style.display = 'block';
         let terrHud = document.getElementById('territory-hud'); if(terrHud) terrHud.style.display = 'block';
+        
+        // Apply Strategic Doctrine if set
+        applyDoctrine();
     }, 2000);
 }
 
@@ -972,6 +1106,33 @@ function getFormationPosition(formation, index, total, cx, cy, spacing, dir) {
     return { x, y };
 }
 
+// --- TOOLTIP SYSTEM ---
+function buildCmdButton(cmd, onclickStr) {
+    let escapedId = cmd.id.replace(/'/g, "\\'");
+    return `<button class="btn btn-sm" onclick="${onclickStr}" onmouseenter="showCmdTooltip(event, '${escapedId}')" onmouseleave="hideCmdTooltip()">${cmd.label}</button>`;
+}
+
+function showCmdTooltip(event, cmdId) {
+    if (!tooltipsEnabled) return;
+    let cmd = SINGLE_SHIP_COMMANDS.find(c => c.id === cmdId) || FLEET_COMMANDS.find(c => c.id === cmdId);
+    if (!cmd) return;
+    let tt = document.getElementById('cmd-tooltip');
+    if (!tt) return;
+    let html = '<div class="tt-title">' + cmd.label + '</div><div>' + cmd.desc + '</div>';
+    if (cmd.strength) html += '<div class="tt-strength" style="margin-top:4px;">✓ ' + cmd.strength + '</div>';
+    if (cmd.weakness) html += '<div class="tt-weakness">✗ ' + cmd.weakness + '</div>';
+    if (cmd.usage) html += '<div class="tt-usage" style="margin-top:2px;">' + cmd.usage + '</div>';
+    tt.innerHTML = html;
+    tt.style.display = 'block';
+    tt.style.left = Math.min(event.clientX + 10, window.innerWidth - 240) + 'px';
+    tt.style.top = Math.min(event.clientY - 10, window.innerHeight - 150) + 'px';
+}
+
+function hideCmdTooltip() {
+    let tt = document.getElementById('cmd-tooltip');
+    if (tt) tt.style.display = 'none';
+}
+
 // --- COMMAND MENU ---
 function openShipCommandMenu(ship, screenX, screenY) {
     commandMenuTarget = ship;
@@ -984,7 +1145,7 @@ function openShipCommandMenu(ship, screenX, screenY) {
     let html = '';
     SINGLE_SHIP_COMMANDS.forEach(cmd => {
         if (cmd.id === 'repair' && ship.shipClass !== 'Support') return;
-        html += `<button class="btn btn-sm" onclick="executeSingleCommand('${cmd.id}')">${cmd.label}</button>`;
+        html += buildCmdButton(cmd, "executeSingleCommand('" + cmd.id + "')");
     });
     btns.innerHTML = html;
     
@@ -1004,7 +1165,7 @@ function openFleetCommandMenu() {
     title.innerText = 'FLEET ORDERS';
     let html = '';
     FLEET_COMMANDS.forEach(cmd => {
-        html += `<button class="btn btn-sm" onclick="executeFleetCommand('${cmd.id}')">${cmd.label}</button>`;
+        html += buildCmdButton(cmd, "executeFleetCommand('" + cmd.id + "')");
     });
     btns.innerHTML = html;
     
@@ -1108,10 +1269,24 @@ function executeFleetCommand(cmdId) {
             }
             break;
         case 'holdline':
-            targets.forEach(e => {
-                e.commandOverride = { type: 'move', pos: e.pos.copy(), persistent: true };
-                e.vel.mult(0);
-            });
+            // Rewritten: maintain formation while repositioning toward objective
+            if (centerTerritory && playerFormationAnchor) {
+                // Move formation anchor toward control zone slowly
+                let dx = centerTerritory.pos.x - playerFormationAnchor.x;
+                let dy = centerTerritory.pos.y - playerFormationAnchor.y;
+                let dist = Math.sqrt(dx*dx + dy*dy);
+                if (dist > 100) {
+                    playerFormationAnchor.x += (dx / dist) * 150;
+                    playerFormationAnchor.y += (dy / dist) * 150;
+                }
+                targets.forEach(e => { e.inFormation = true; e.commandPersistent = false; });
+                applyFormationToFleet(1, playerFormation);
+            } else {
+                targets.forEach(e => {
+                    e.commandOverride = { type: 'move', pos: e.pos.copy(), persistent: true };
+                    e.vel.mult(0);
+                });
+            }
             break;
         case 'assault':
             if (eMS) targets.forEach(e => { 
@@ -1166,9 +1341,98 @@ function executeFleetCommand(cmdId) {
                 applyFormationToFleet(1, playerFormation);
             }
             break;
+        case 'reinforce_fallen': {
+            // Spawn replacement ships without recalling existing fleet
+            if (!pMS || pMS.isDead) break;
+            let currentCount = getFleetCount(1);
+            let slotsOpen = MAX_FLEET_PER_SIDE - currentCount;
+            if (slotsOpen <= 0) { showNotification('Fleet cap reached!'); break; }
+            if (playerEnergy < 40) { showNotification('Not enough energy (40 KW)'); break; }
+            playerEnergy -= 40;
+            let spawned = 0;
+            for (let i = 0; i < Math.min(3, slotsOpen); i++) {
+                let cl = Math.random() > 0.5 ? 'Frigate' : 'Destroyer';
+                let ship = new Ship(pMS.pos.x + randomRange(-150,150), pMS.pos.y + randomRange(50,150), getPlayerFaction(), cl);
+                // Auto-assign to nearest active formation or contested objective
+                let nearestAnchor = playerFormationAnchor;
+                if (centerTerritory && centerTerritory.owner !== 1) {
+                    ship.commandOverride = { type: 'move', pos: new Vector(centerTerritory.pos.x + randomRange(-100,100), centerTerritory.pos.y + randomRange(-100,100)), persistent: false };
+                    ship.inFormation = false;
+                } else if (nearestAnchor) {
+                    ship.inFormation = true;
+                } else {
+                    ship.inFormation = false;
+                }
+                // Don't require global staging - just go
+                ship.stagingState = false;
+                entities.push(ship);
+                spawned++;
+            }
+            if (spawned > 0) {
+                if (playerFormationAnchor) applyFormationToFleet(1, playerFormation);
+                showNotification('Reinforced: ' + spawned + ' ships deployed');
+            }
+            updateFleetUI();
+            break;
+        }
     }
     hideCommandMenu();
+    hideCmdTooltip();
     showNotification(cmdId.toUpperCase() + ' order issued');
+}
+
+// --- STRATEGIC DOCTRINE AUTO-BEHAVIOR ---
+function applyDoctrine() {
+    let doctrine = STRATEGIC_DOCTRINES[profileData.doctrine];
+    if (!doctrine || !doctrine.behavior) return;
+    
+    let pMS = entities.find(e => e.type === 'MotherShip' && e.faction.id === 1);
+    let eMS = entities.find(e => e.type === 'MotherShip' && e.faction.id === 2);
+    let pShips = entities.filter(e => e.faction.id === 1 && e.type === 'Ship' && !e.isDead);
+    
+    switch (doctrine.behavior) {
+        case 'defensive':
+            // Hold control zone, prioritize closest threats
+            if (centerTerritory && playerFormationAnchor) {
+                playerFormationAnchor = new Vector(centerTerritory.pos.x, centerTerritory.pos.y);
+                applyFormationToFleet(1, 'circle');
+            }
+            showNotification('Doctrine: ' + doctrine.name);
+            break;
+        case 'flank':
+            // Split fleet wide
+            if (playerFormationAnchor) {
+                let half = Math.floor(pShips.length / 2);
+                pShips.forEach((s, i) => {
+                    if (i < half) {
+                        s.commandOverride = { type: 'move', pos: new Vector(s.pos.x - 500, s.pos.y - 300), persistent: true };
+                    } else {
+                        s.commandOverride = { type: 'move', pos: new Vector(s.pos.x + 500, s.pos.y - 300), persistent: true };
+                    }
+                    s.inFormation = false;
+                });
+            }
+            showNotification('Doctrine: ' + doctrine.name);
+            break;
+        case 'assault':
+            // Advance continuously toward enemy MS
+            if (eMS) {
+                pShips.forEach(s => {
+                    s.commandOverride = { type: 'attack', target: eMS, persistent: true };
+                    s.inFormation = false;
+                });
+            }
+            showNotification('Doctrine: ' + doctrine.name);
+            break;
+        case 'adaptive':
+            // Mirror enemy formation
+            if (enemyFormation) {
+                playerFormation = enemyFormation;
+                applyFormationToFleet(1, playerFormation);
+            }
+            showNotification('Doctrine: ' + doctrine.name + ' (mirroring enemy)');
+            break;
+    }
 }
 
 // --- ENVIRONMENT ---
@@ -1269,8 +1533,17 @@ class Entity {
         this.gearRot = randomRange(0, Math.PI);
         this.asym = [randomRange(-3,3), randomRange(-3,3), randomRange(-3,3), randomRange(-3,3)];
     }
-    takeDamage(amount) {
+    takeDamage(amount, attackerAngle) {
         if (this.shieldTimer > 0) amount *= 0.1;
+        // Facing awareness: rear hits take extra damage
+        if (attackerAngle !== undefined && this.type === 'Ship') {
+            let facingAngle = this.angle;
+            let angleDiff = Math.abs(((attackerAngle - facingAngle + Math.PI * 3) % (Math.PI * 2)) - Math.PI);
+            // angleDiff near 0 = hit from behind, near PI = hit from front
+            if (angleDiff < Math.PI * 0.4) {
+                amount *= REAR_DAMAGE_MULTIPLIER; // Rear hit
+            }
+        }
         this.hp -= amount;
         if (this.faction) matchStats.totalDamageDealt += amount;
         if (this.hp <= 0 && !this.isDead) { this.hp = 0; this.die(); }
@@ -1337,6 +1610,13 @@ class MotherShip extends Entity {
                 this.aiEnergy -= 60;
                 buildAIFleet(this.pos.x, this.pos.y, this.faction, skirmishConfig.aiProfile, 60);
             }
+            
+            // --- AI OBJECTIVE PRIORITY TREE (every ~2.5s) ---
+            aiDecisionTimer -= timeScale;
+            if (aiDecisionTimer <= 0) {
+                aiDecisionTimer = AI_DECISION_INTERVAL;
+                this.runAIPriorityTree();
+            }
         }
 
         if (Math.random() < 0.05 * timeScale) {
@@ -1366,6 +1646,68 @@ class MotherShip extends Entity {
         }
 
         if (this.hp < this.maxHp * 0.25 && Math.random() < 0.2) createExplosion(this.pos.x + randomRange(-50,50), this.pos.y + randomRange(-50,50), currentTheme === 'oasis' ? '#ffea00' : '#ff4500', 1, 3);
+    }
+    
+    // --- AI OBJECTIVE PRIORITY TREE ---
+    runAIPriorityTree() {
+        if (this.isDead || this.faction.id !== 2) return;
+        let eShips = entities.filter(e => e.faction.id === 2 && e.type === 'Ship' && !e.isDead);
+        if (eShips.length === 0) return;
+        
+        let pMS = entities.find(e => e.type === 'MotherShip' && e.faction.id === 1 && !e.isDead);
+        
+        // Priority 1: Is control zone being lost?
+        if (centerTerritory && centerTerritory.owner === 1) {
+            // Contest: move formation toward control zone
+            if (enemyFormationAnchor) {
+                let dx = centerTerritory.pos.x - enemyFormationAnchor.x;
+                let dy = centerTerritory.pos.y - enemyFormationAnchor.y;
+                let dist = Math.sqrt(dx*dx + dy*dy);
+                if (dist > 200) {
+                    enemyFormationAnchor.x += (dx / dist) * 200;
+                    enemyFormationAnchor.y += (dy / dist) * 200;
+                    applyFormationToFleet(2, enemyFormation);
+                }
+            }
+            return;
+        }
+        
+        // Priority 2: Is enemy threatening mothership?
+        let threatsToMS = entities.filter(e => e.faction.id === 1 && !e.isDead && e.type === 'Ship' && this.pos.dist(e.pos) < this.auraRadius * 1.5);
+        if (threatsToMS.length >= 3) {
+            // Intercept: pull formation back to defend
+            enemyFormationAnchor = new Vector(this.pos.x, this.pos.y + 200);
+            applyFormationToFleet(2, 'circle');
+            return;
+        }
+        
+        // Priority 3: Is flank exposed?
+        let leftFlank = eShips.filter(s => s.pos.x < this.pos.x - 300);
+        let rightFlank = eShips.filter(s => s.pos.x > this.pos.x + 300);
+        let pShipsLeft = entities.filter(e => e.faction.id === 1 && !e.isDead && e.type === 'Ship' && e.pos.x < this.pos.x - 200);
+        let pShipsRight = entities.filter(e => e.faction.id === 1 && !e.isDead && e.type === 'Ship' && e.pos.x > this.pos.x + 200);
+        
+        if (pShipsLeft.length > leftFlank.length * 2 && leftFlank.length > 0) {
+            // Rotate formation to cover left
+            if (enemyFormationAnchor) { enemyFormationAnchor.x -= 150; applyFormationToFleet(2, enemyFormation); }
+            return;
+        }
+        if (pShipsRight.length > rightFlank.length * 2 && rightFlank.length > 0) {
+            if (enemyFormationAnchor) { enemyFormationAnchor.x += 150; applyFormationToFleet(2, enemyFormation); }
+            return;
+        }
+        
+        // Priority 4: Default → maintain formation and advance slowly toward objective
+        if (centerTerritory && enemyFormationAnchor) {
+            let dx = centerTerritory.pos.x - enemyFormationAnchor.x;
+            let dy = centerTerritory.pos.y - enemyFormationAnchor.y;
+            let dist = Math.sqrt(dx*dx + dy*dy);
+            if (dist > 100) {
+                enemyFormationAnchor.x += (dx / dist) * 80;
+                enemyFormationAnchor.y += (dy / dist) * 80;
+                applyFormationToFleet(2, enemyFormation);
+            }
+        }
     }
 
     draw(ctx, isMenu=false) {
@@ -1594,6 +1936,31 @@ class Ship extends Entity {
             this.vel.x = Math.max(-curMax, Math.min(curMax, this.vel.x)); this.vel.y = Math.max(-curMax, Math.min(curMax, this.vel.y));
             this.pos.add(this.vel.copy().mult(timeScale));
             if (this.vel.mag() > 0.1) this.angle = Math.atan2(this.vel.y, this.vel.x);
+            
+            // --- FACING AWARENESS: auto-rotate front arc toward strongest threat ---
+            if (this.state === 'FormationHold' || (this.inFormation && this.vel.mag() < 1)) {
+                let nearbyEnemies = entities.filter(e => e.faction.id !== this.faction.id && !e.isDead && e.type === 'Ship' && this.pos.dist(e.pos) < this.detectionRange);
+                if (nearbyEnemies.length > 0) {
+                    // Weighted average threat vector
+                    let wx = 0, wy = 0, totalW = 0;
+                    nearbyEnemies.forEach(ne => {
+                        let d = Math.max(1, this.pos.dist(ne.pos));
+                        let w = (ne.dmg || 10) / d;
+                        wx += (ne.pos.x - this.pos.x) * w;
+                        wy += (ne.pos.y - this.pos.y) * w;
+                        totalW += w;
+                    });
+                    if (totalW > 0) {
+                        let desiredAngle = Math.atan2(wy / totalW, wx / totalW);
+                        // Smooth rotation toward threat
+                        let angleDiff = desiredAngle - this.angle;
+                        while (angleDiff > Math.PI) angleDiff -= Math.PI * 2;
+                        while (angleDiff < -Math.PI) angleDiff += Math.PI * 2;
+                        // Only rotate if it won't break formation cohesion too much
+                        this.angle += angleDiff * 0.05 * timeScale;
+                    }
+                }
+            }
         }
         this.acc.mult(0);
         this.gearRot += this.vel.mag() * 0.05 * timeScale;
@@ -1896,10 +2263,13 @@ class Ship extends Entity {
         let bestScore = -Infinity;
         let myMS = entities.find(e => e.type === 'MotherShip' && e.faction.id === this.faction.id);
 
+        // Build targeting counts for synergy check
         let targetingCounts = new Map();
+        let alliesNearMe = [];
         entities.forEach(ally => {
-            if (ally.faction.id === this.faction.id && ally.target) {
+            if (ally.faction.id === this.faction.id && ally.target && !ally.isDead && ally.type === 'Ship') {
                 targetingCounts.set(ally.target.id, (targetingCounts.get(ally.target.id) || 0) + 1);
+                if (ally !== this && this.pos.dist(ally.pos) < 400) alliesNearMe.push(ally);
             }
         });
 
@@ -1910,15 +2280,44 @@ class Ship extends Entity {
             let score = 0; 
             
             if (this.shipClass !== 'Support') {
+                // --- THREAT SCORING SYSTEM ---
+                // Distance weight
+                score -= distToMe * 0.5;
+                
+                // Damage output threat
+                score += (e.dmg || 0) * 3;
+                
+                // Back exposure opportunity
+                if (e.type === 'Ship') {
+                    let angleToEnemy = Math.atan2(e.pos.y - this.pos.y, e.pos.x - this.pos.x);
+                    let enemyFacing = e.angle;
+                    let facingDiff = Math.abs(((angleToEnemy - enemyFacing + Math.PI * 3) % (Math.PI * 2)) - Math.PI);
+                    if (facingDiff < Math.PI * 0.4) score += 150; // Back exposed
+                }
+                
+                // Objective proximity
+                if (centerTerritory) {
+                    let distToObj = e.pos.dist(centerTerritory.pos);
+                    if (distToObj < centerTerritory.radius * 2) score += 200;
+                }
+                
+                // HP weight - prefer finishing damaged targets
+                score -= e.hp * 0.2;
+                
+                // Is attacking our MS? High priority
                 let isAttackingMS = (e.target && e.target.type === 'MotherShip' && e.target.faction.id === this.faction.id);
                 if (isAttackingMS) score += 500;
                 
-                score -= distToMe * 0.5; 
-                score -= e.hp * 0.2; 
-                score += (e.dmg || 0) * 2; 
-
+                // Double-team synergy: if ally nearby is already targeting, boost score for coordinated attack
                 let tCount = targetingCounts.get(e.id) || 0;
-                if (e.hp < tCount * 30 && (!this.commandOverride || this.commandOverride.target !== e)) {
+                let allyTargetingThis = alliesNearMe.filter(a => a.target === e);
+                if (allyTargetingThis.length === 1 && tCount < 3) {
+                    // 2v1 advantage possible without breaking cohesion
+                    score += 200; // Synergy bonus
+                }
+                
+                // Avoid overkill
+                if (e.hp < tCount * 30 && tCount >= 3 && (!this.commandOverride || this.commandOverride.target !== e)) {
                     score -= 1000;
                 }
 
@@ -2124,7 +2523,8 @@ class Laser {
         for (let e of entities) {
             if (e.isDead || e.faction.id === (this.isPlayer ? 1 : 2)) continue;
             if (this.pos.dist(e.pos) < e.radius + 15) {
-                e.takeDamage(this.damage); createExplosion(this.pos.x, this.pos.y, currentTheme==='oasis'?'#ffea00':'#ffd700', 5, 4); playSound('hit', this.pos.dist(camera));
+                let attackAngle = Math.atan2(this.vel.y, this.vel.x);
+                e.takeDamage(this.damage, attackAngle); createExplosion(this.pos.x, this.pos.y, currentTheme==='oasis'?'#ffea00':'#ffd700', 5, 4); playSound('hit', this.pos.dist(camera));
                 this.life = 0; return;
             }
         }
