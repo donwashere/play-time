@@ -88,10 +88,11 @@
         .cmd-tooltip .tt-usage { color: #93c5fd; font-style: italic; }
 
         /* Doctrine Planner in Dockyard */
-        .doctrine-card { background: #f4f1eb; border: 3px solid #1a1817; padding: 8px; cursor: pointer; position: relative; transition: all 0.1s; box-shadow: 3px 3px 0 rgba(0,0,0,0.5); }
-        .doctrine-card:hover { background: #d4c575; transform: translate(1px,1px); box-shadow: 1px 1px 0 rgba(0,0,0,0.5); }
-        .doctrine-card.selected { background: #d4c575; border-color: #8b2b2b; }
+        .doctrine-card { background: transparent; border: 2px dashed #3a6ea5; padding: 10px; cursor: pointer; position: relative; transition: all 0.1s; border-radius: 0; }
+        .doctrine-card:hover { background: rgba(58, 110, 165, 0.08); transform: rotate(-0.5deg); }
+        .doctrine-card.selected { background: rgba(212, 197, 117, 0.25); border: 2px solid #8b2b2b; transform: rotate(0.3deg); }
         .doctrine-card .scribble-line { position: absolute; opacity: 0.3; }
+        .doctrine-card .doctrine-icon { font-size: 1.2rem; }
 
     </style>
 </head>
@@ -148,7 +149,7 @@
         </div>
     </div>
     <!-- FLEET COUNTER HUD -->
-    <div id="fleet-counter-hud" style="display:none;">Fleet: 0 / 20</div>
+    <div id="fleet-counter-hud" style="display:none;">Fleet: 0 / 25</div>
     <!-- TERRITORY HUD -->
     <div id="territory-hud" style="display:none;">
         <div style="font-size:0.7rem; color:#1a1817; font-weight:bold; letter-spacing:2px;">CONTROL ZONE</div>
@@ -282,14 +283,18 @@
             
             <!-- STRATEGIC DOCTRINE PLANNER -->
             <div class="text-iron text-lg text-center mt-4 mb-2">STRATEGIC DOCTRINE PLANNER</div>
-            <div style="background:#f4f1eb; border:3px solid #1a1817; padding:12px; position:relative; overflow:hidden;">
-                <!-- Scribbled football tactic background -->
-                <canvas id="doctrine-canvas" width="540" height="200" style="position:absolute; top:0; left:0; width:100%; height:200px; opacity:0.15; pointer-events:none;"></canvas>
-                <div class="text-center text-xs font-bold mb-2" style="color:#8b2b2b; letter-spacing:3px; position:relative; z-index:1;">PRE-BATTLE BEHAVIOR SCRIPT</div>
-                <div class="grid grid-cols-2 gap-2" id="doctrine-cards" style="position:relative; z-index:1;">
+            <div style="background:#faf6ee; border:3px solid #1a1817; padding:16px; position:relative; overflow:hidden; box-shadow: inset 0 0 30px rgba(0,0,0,0.08);">
+                <!-- Paper texture background -->
+                <div style="position:absolute; top:0; left:0; width:100%; height:100%; background: repeating-linear-gradient(0deg, transparent, transparent 28px, rgba(100,140,200,0.12) 28px, rgba(100,140,200,0.12) 29px); pointer-events:none;"></div>
+                <!-- Red margin line -->
+                <div style="position:absolute; top:0; left:50px; width:2px; height:100%; background:rgba(200,80,80,0.25); pointer-events:none;"></div>
+                <!-- Scribbled football tactic canvas -->
+                <canvas id="doctrine-canvas" width="540" height="280" style="position:absolute; top:0; left:0; width:100%; height:280px; opacity:0.35; pointer-events:none;"></canvas>
+                <div class="text-center text-xs font-bold mb-3" style="color:#8b2b2b; letter-spacing:3px; position:relative; z-index:1; text-decoration:underline; text-underline-offset:4px;">PRE-BATTLE BEHAVIOR SCRIPT</div>
+                <div class="grid grid-cols-2 gap-3" id="doctrine-cards" style="position:relative; z-index:1;">
                     <!-- Populated by JS -->
                 </div>
-                <div class="text-center text-[10px] mt-2 font-bold" id="doctrine-desc" style="position:relative; z-index:1;">Select a doctrine for auto-fleet behavior</div>
+                <div class="text-center text-[10px] mt-3 font-bold" id="doctrine-desc" style="position:relative; z-index:1; font-style:italic;">Select a doctrine for auto-fleet behavior</div>
             </div>
             
             <div class="flex space-x-2 mt-6">
@@ -299,20 +304,53 @@
         </div>
 
         <!-- COMMANDER PROFILE -->
-        <div id="menu-profile" class="steampunk-panel w-[500px] p-8 menu-screen">
+        <div id="menu-profile" class="steampunk-panel w-[550px] p-8 menu-screen" style="max-height:90vh; overflow-y:auto;">
             <div class="text-iron text-xl text-center mb-4">SERVICE RECORD</div>
-            <div class="text-center mb-4 border-b-2 border-black pb-2">
-                <div class="text-sm font-bold text-gray-600">Current Rank</div>
+            
+            <!-- Player Identity -->
+            <div class="text-center mb-4 border-b-2 border-black pb-3">
+                <div style="width:60px; height:60px; border-radius:50%; border:3px solid #1a1817; background:#e6ddc5; margin:0 auto 8px; display:flex; align-items:center; justify-content:center; font-size:1.5rem;">⚓</div>
+                <div id="prof-name" class="text-lg font-black tracking-wider" style="color:#008080;">ALLIED STEAM CARRIER</div>
+                <div class="text-sm font-bold text-gray-600 mt-1">Current Rank</div>
                 <div id="prof-rank" class="text-2xl text-copper font-black tracking-widest">SCRAP CAPTAIN</div>
             </div>
-            <div class="space-y-2 font-bold mb-4">
+            
+            <!-- League & Season -->
+            <div class="grid grid-cols-2 gap-2 mb-4 text-sm font-bold">
+                <div class="border border-black p-2 text-center bg-white bg-opacity-30">
+                    <div class="text-[10px] text-gray-500 uppercase tracking-wider">League</div>
+                    <div id="prof-league" class="text-copper">Bronze Division</div>
+                </div>
+                <div class="border border-black p-2 text-center bg-white bg-opacity-30">
+                    <div class="text-[10px] text-gray-500 uppercase tracking-wider">Season Rank</div>
+                    <div id="prof-season-rank">#---</div>
+                </div>
+            </div>
+            
+            <!-- Win/Loss Record -->
+            <div class="text-iron text-sm mb-2">COMBAT RECORD</div>
+            <div class="space-y-1 font-bold mb-4 text-sm">
                 <div class="flex justify-between"><span>Total Battles:</span> <span id="prof-battles">0</span></div>
                 <div class="flex justify-between"><span>Victories:</span> <span id="prof-wins" class="text-green-700">0</span></div>
+                <div class="flex justify-between"><span>Win Rate:</span> <span id="prof-winrate">0%</span></div>
                 <div class="flex justify-between"><span>Enemy Carriers Destroyed:</span> <span id="prof-ms">0</span></div>
                 <div class="flex justify-between"><span>Ships Lost:</span> <span id="prof-lost" class="text-red-700">0</span></div>
+                <div class="flex justify-between"><span>Total XP:</span> <span id="prof-xp" class="text-copper">0</span></div>
             </div>
-            <div class="text-iron text-lg mt-4 border-t-2 border-black pt-2">ACHIEVEMENTS</div>
-            <div id="achievement-list" class="space-y-1 text-sm text-gray-600 mb-4 h-24 overflow-y-auto">
+            
+            <!-- Fleet Usage Stats -->
+            <div class="text-iron text-sm mb-2">FLEET USAGE</div>
+            <div id="prof-fleet-usage" class="text-xs font-bold mb-4 space-y-1 border border-black p-2 bg-white bg-opacity-20">
+                <!-- Populated by JS -->
+            </div>
+            
+            <!-- Active Doctrine -->
+            <div class="text-iron text-sm mb-2">ACTIVE DOCTRINE</div>
+            <div id="prof-doctrine" class="text-sm font-bold mb-4 border border-black p-2 bg-white bg-opacity-20">No Doctrine Selected</div>
+            
+            <!-- Achievements -->
+            <div class="text-iron text-sm mb-2">ACHIEVEMENT BADGES</div>
+            <div id="achievement-list" class="space-y-1 text-sm text-gray-600 mb-4 h-28 overflow-y-auto border border-black p-2 bg-white bg-opacity-20">
                 <!-- populated by JS -->
             </div>
             <button class="btn py-3 mt-2" onclick="switchMenu('main')">Return to Command</button>
@@ -404,11 +442,12 @@
 
 // --- DATA & CONFIG ---
 const SHIP_CLASSES = {
-    'Frigate': { cost: 15, hp: 100, speed: 5.5, maxForce: 0.3, range: 250, dmg: 10, fireRate: 35, role: 'Flanker', desc: 'Fast, flanks enemies.' },
-    'Destroyer': { cost: 25, hp: 180, speed: 4.0, maxForce: 0.2, range: 350, dmg: 18, fireRate: 45, role: 'Aggressor', desc: 'Frontline bruiser.' },
-    'Siege': { cost: 40, hp: 250, speed: 2.5, maxForce: 0.1, range: 550, dmg: 50, fireRate: 100, role: 'Aggressor', desc: 'Slow, long range, high dmg.' },
-    'Support': { cost: 30, hp: 140, speed: 3.5, maxForce: 0.2, range: 200, dmg: 5, fireRate: 60, role: 'Guardian', heal: true, desc: 'Repairs nearby allies.' },
-    'Interceptor': { cost: 20, hp: 120, speed: 6.5, maxForce: 0.4, range: 200, dmg: 12, fireRate: 20, role: 'Hunter', desc: 'Hunts weak targets.' }
+    'Frigate': { cost: 15, hp: 112, speed: 5.5, maxForce: 0.3, range: 250, dmg: 10, fireRate: 35, role: 'Flanker', desc: 'Fast, flanks enemies.' },
+    'Destroyer': { cost: 25, hp: 200, speed: 4.0, maxForce: 0.2, range: 350, dmg: 18, fireRate: 45, role: 'Aggressor', desc: 'Frontline bruiser.' },
+    'Siege': { cost: 40, hp: 275, speed: 2.5, maxForce: 0.1, range: 550, dmg: 50, fireRate: 100, role: 'Aggressor', desc: 'Slow, long range, high dmg.' },
+    'Support': { cost: 30, hp: 155, speed: 3.5, maxForce: 0.2, range: 200, dmg: 5, fireRate: 60, role: 'Guardian', heal: true, desc: 'Repairs nearby allies.' },
+    'Interceptor': { cost: 20, hp: 134, speed: 6.5, maxForce: 0.4, range: 200, dmg: 12, fireRate: 20, role: 'Hunter', desc: 'Hunts weak targets.' },
+    'Shield': { cost: 35, hp: 300, speed: 2.8, maxForce: 0.15, range: 150, dmg: 4, fireRate: 80, role: 'Guardian', desc: 'Frontal barrier, absorbs damage for allies.', isShield: true }
 };
 
 const CONDITIONS = [
@@ -443,6 +482,7 @@ const SINGLE_SHIP_COMMANDS = [
 const FLEET_COMMANDS = [
     { id: 'advance', label: 'Advance', desc: 'Move fleet forward', strength: 'Gains territory and pressure.', weakness: 'Exposed to ambush.', usage: 'Use when you have fleet advantage.' },
     { id: 'holdline', label: 'Hold Line', desc: 'Maintain formation toward objective', strength: 'Keeps cohesion and discipline.', weakness: 'Slower to react to flanks.', usage: 'Use to hold captured territory.' },
+    { id: 'engage', label: 'Engage', desc: 'One fleet secures zone, rest flank enemies', strength: 'Balanced offense + objective control.', weakness: 'Requires enough ships to split.', usage: 'Use as default combat stance.' },
     { id: 'assault', label: 'Full Assault', desc: 'All-out attack on enemy MS', strength: 'Strong against weakened enemies.', weakness: 'Weak to flanking and morale collapse.', usage: 'Use when enemy fleet is depleted.' },
     { id: 'defensive', label: 'Defensive Stance', desc: 'Pull back to MS', strength: 'MS aura heals ships.', weakness: 'Cedes territory.', usage: 'Use when low on ships.' },
     { id: 'flankleft', label: 'Flank Left', desc: 'Move fleet left', strength: 'Bypasses front defenses.', weakness: 'Splits from main body.', usage: 'Use to expose enemy rear.' },
@@ -455,7 +495,7 @@ const FLEET_COMMANDS = [
 ];
 
 // --- FLEET CAP ---
-const MAX_FLEET_PER_SIDE = 20;
+const MAX_FLEET_PER_SIDE = 25;
 
 // --- DISCIPLINE MODES ---
 const DISCIPLINE_MODES = {
@@ -488,7 +528,7 @@ let profileData = {
     fleetName: 'ALLIED STEAM CARRIER', colorAccent: '#008080',
     commanderTree: 'Tactical', layout: 'default', theme: 'retro',
     achievements: { timeWin: false, noLoss: false, lowHpWin: false },
-    fleetBuild: { 'Frigate': 4, 'Destroyer': 2, 'Siege': 1, 'Support': 1, 'Interceptor': 2 },
+    fleetBuild: { 'Frigate': 4, 'Destroyer': 2, 'Siege': 1, 'Support': 1, 'Interceptor': 2, 'Shield': 1 },
     doctrine: 'none'
 };
 
@@ -754,10 +794,46 @@ function switchMenu(target) {
             let prMs = document.getElementById('prof-ms'); if(prMs) prMs.innerText = profileData.msDestroyed;
             let prLost = document.getElementById('prof-lost'); if(prLost) prLost.innerText = profileData.shipsLost; 
             let prXp = document.getElementById('prof-xp'); if(prXp) prXp.innerText = profileData.xp;
+            let prName = document.getElementById('prof-name'); if(prName) { prName.innerText = profileData.fleetName; prName.style.color = profileData.colorAccent; }
             
-            let achHtml = `Time Attack (Win < 5m): ${profileData.achievements.timeWin?'[UNLOCKED]':'[LOCKED]'}<br>
-                           Flawless (No Losses): ${profileData.achievements.noLoss?'[UNLOCKED]':'[LOCKED]'}<br>
-                           Close Call (MS < 20%): ${profileData.achievements.lowHpWin?'[UNLOCKED]':'[LOCKED]'}`;
+            // Win rate
+            let wr = document.getElementById('prof-winrate');
+            if (wr) wr.innerText = profileData.battles > 0 ? Math.round(profileData.wins / profileData.battles * 100) + '%' : '0%';
+            
+            // League
+            let league = document.getElementById('prof-league');
+            if (league) {
+                if (profileData.xp < 1000) league.innerText = 'Bronze Division';
+                else if (profileData.xp < 3000) league.innerText = 'Silver Division';
+                else if (profileData.xp < 8000) league.innerText = 'Gold Division';
+                else league.innerText = 'Diamond Division';
+            }
+            
+            // Season rank
+            let sRank = document.getElementById('prof-season-rank');
+            if (sRank) sRank.innerText = profileData.battles > 0 ? '#' + Math.max(1, 100 - Math.floor(profileData.xp / 100)) : '#---';
+            
+            // Fleet usage
+            let fleetUsage = document.getElementById('prof-fleet-usage');
+            if (fleetUsage) {
+                let fuHtml = '';
+                for (let cls in profileData.fleetBuild) {
+                    let count = profileData.fleetBuild[cls] || 0;
+                    if (count > 0) fuHtml += `<div class="flex justify-between"><span>${cls}:</span><span>${count} units</span></div>`;
+                }
+                fleetUsage.innerHTML = fuHtml || '<div>No fleet configured</div>';
+            }
+            
+            // Active doctrine
+            let profDoc = document.getElementById('prof-doctrine');
+            if (profDoc) {
+                let d = STRATEGIC_DOCTRINES[profileData.doctrine];
+                profDoc.innerText = d ? d.name + ' — ' + d.desc : 'No Doctrine Selected';
+            }
+            
+            let achHtml = `<div class="flex items-center gap-2">${profileData.achievements.timeWin ? '🏆' : '🔒'} <span>Blitzkrieg (Win < 5m)</span></div>
+                           <div class="flex items-center gap-2">${profileData.achievements.noLoss ? '🏆' : '🔒'} <span>Flawless Victory (No Losses)</span></div>
+                           <div class="flex items-center gap-2">${profileData.achievements.lowHpWin ? '🏆' : '🔒'} <span>By a Thread (MS < 20%)</span></div>`;
             let achList = document.getElementById('achievement-list');
             if(achList) achList.innerHTML = achHtml;
         }
@@ -831,11 +907,13 @@ function renderDoctrineCards() {
         let d = STRATEGIC_DOCTRINES[key];
         if (key === 'none') continue;
         let sel = profileData.doctrine === key ? 'selected' : '';
-        html += '<div class="doctrine-card ' + sel + '" onclick="selectDoctrine(\'' + key + '\')">';
-        html += '<div style="font-weight:bold; font-size:0.85rem;">' + (d.icon || '') + ' ' + d.name + '</div>';
-        html += '<div style="font-size:0.65rem; color:#555; margin-top:2px;">' + d.desc + '</div>';
-        if (d.strength) html += '<div style="font-size:0.6rem; color:#166534; margin-top:2px;">✓ ' + d.strength + '</div>';
-        if (d.weakness) html += '<div style="font-size:0.6rem; color:#991b1b;">✗ ' + d.weakness + '</div>';
+        let rotation = (Math.random() - 0.5) * 2; // slight random tilt
+        html += '<div class="doctrine-card ' + sel + '" onclick="selectDoctrine(\'' + key + '\')" style="transform:rotate(' + rotation + 'deg);">';
+        html += '<div class="doctrine-icon" style="float:left; margin-right:6px;">' + (d.icon || '📋') + '</div>';
+        html += '<div style="font-weight:bold; font-size:0.8rem; text-decoration:underline; text-underline-offset:3px;">' + d.name + '</div>';
+        html += '<div style="font-size:0.6rem; color:#444; margin-top:3px; font-style:italic;">"' + d.desc + '"</div>';
+        if (d.strength) html += '<div style="font-size:0.55rem; color:#166534; margin-top:3px;">✓ ' + d.strength + '</div>';
+        if (d.weakness) html += '<div style="font-size:0.55rem; color:#991b1b;">✗ ' + d.weakness + '</div>';
         html += '</div>';
     }
     container.innerHTML = html;
@@ -856,45 +934,157 @@ function drawDoctrineCanvas() {
     if (!c) return;
     let ctx2 = c.getContext('2d');
     ctx2.clearRect(0, 0, c.width, c.height);
-    ctx2.strokeStyle = '#1a1817';
-    ctx2.lineWidth = 2;
-    ctx2.setLineDash([5, 3]);
     
-    // Draw football-style tactic scribbles
     let cx = c.width / 2, cy = c.height / 2;
     
-    // Center circle
-    ctx2.beginPath(); ctx2.arc(cx, cy, 40, 0, Math.PI*2); ctx2.stroke();
+    // Paper-like field outline (hand-drawn wobbly lines)
+    ctx2.strokeStyle = '#3a6ea5';
+    ctx2.lineWidth = 1.5;
     
-    // Center line
-    ctx2.beginPath(); ctx2.moveTo(0, cy); ctx2.lineTo(c.width, cy); ctx2.stroke();
+    // Outer boundary (wobbly rectangle)
+    ctx2.beginPath();
+    for (let i = 0; i <= 20; i++) {
+        let t = i / 20;
+        ctx2.lineTo(30 + t * (c.width - 60) + Math.sin(i*3)*2, 15 + Math.cos(i*5)*1.5);
+    }
+    for (let i = 0; i <= 10; i++) {
+        let t = i / 10;
+        ctx2.lineTo(c.width - 30 + Math.sin(i*4)*1.5, 15 + t * (c.height - 30) + Math.cos(i*3)*2);
+    }
+    for (let i = 20; i >= 0; i--) {
+        let t = i / 20;
+        ctx2.lineTo(30 + t * (c.width - 60) + Math.sin(i*3)*2, c.height - 15 + Math.cos(i*5)*1.5);
+    }
+    for (let i = 10; i >= 0; i--) {
+        let t = i / 10;
+        ctx2.lineTo(30 + Math.sin(i*4)*1.5, 15 + t * (c.height - 30) + Math.cos(i*3)*2);
+    }
+    ctx2.closePath();
+    ctx2.stroke();
     
-    // Goal areas
-    ctx2.setLineDash([]);
-    ctx2.strokeRect(cx - 80, 0, 160, 40);
-    ctx2.strokeRect(cx - 80, c.height - 40, 160, 40);
+    // Half-way line
+    ctx2.beginPath();
+    for (let i = 0; i <= 20; i++) {
+        let t = i / 20;
+        ctx2.lineTo(30 + t * (c.width - 60), cy + Math.sin(i*4)*1.5);
+    }
+    ctx2.stroke();
     
-    // Arrows for formations
-    ctx2.setLineDash([3, 3]);
-    ctx2.strokeStyle = '#8b2b2b';
-    ctx2.lineWidth = 3;
+    // Center circle (wobbly)
+    ctx2.beginPath();
+    for (let i = 0; i <= 30; i++) {
+        let a = (Math.PI * 2 / 30) * i;
+        let r = 35 + Math.sin(i*5)*2;
+        ctx2.lineTo(cx + Math.cos(a) * r, cy + Math.sin(a) * r);
+    }
+    ctx2.closePath();
+    ctx2.stroke();
     
-    // Scattered X marks for positions
-    let positions = [[cx-100, cy-50], [cx, cy-70], [cx+100, cy-50], [cx-60, cy+30], [cx+60, cy+30], [cx, cy+60]];
-    positions.forEach(p => {
-        ctx2.beginPath(); ctx2.moveTo(p[0]-6, p[1]-6); ctx2.lineTo(p[0]+6, p[1]+6); ctx2.stroke();
-        ctx2.beginPath(); ctx2.moveTo(p[0]+6, p[1]-6); ctx2.lineTo(p[0]-6, p[1]+6); ctx2.stroke();
+    // Goal/penalty areas
+    ctx2.strokeRect(cx - 70 + Math.random()*2, 15, 140, 35);
+    ctx2.strokeRect(cx - 70 + Math.random()*2, c.height - 50, 140, 35);
+    
+    // Smaller goal boxes
+    ctx2.strokeRect(cx - 35, 15, 70, 18);
+    ctx2.strokeRect(cx - 35, c.height - 33, 70, 18);
+    
+    // --- PLAYER POSITIONS (scribbled circles with numbers) ---
+    ctx2.strokeStyle = '#2563eb';
+    ctx2.fillStyle = '#2563eb';
+    ctx2.lineWidth = 2;
+    let playerPositions = [
+        [cx, cy + 80], // GK
+        [cx - 90, cy + 45], [cx - 30, cy + 45], [cx + 30, cy + 45], [cx + 90, cy + 45], // DEF
+        [cx - 70, cy + 10], [cx, cy + 5], [cx + 70, cy + 10], // MID  
+        [cx - 50, cy - 30], [cx + 50, cy - 30], // FWD
+        [cx, cy - 55], // ST
+    ];
+    playerPositions.forEach((p, i) => {
+        ctx2.beginPath();
+        for (let j = 0; j <= 12; j++) {
+            let a = (Math.PI * 2 / 12) * j;
+            let r = 8 + Math.sin(j*3)*1.5;
+            ctx2.lineTo(p[0] + Math.cos(a) * r, p[1] + Math.sin(a) * r);
+        }
+        ctx2.closePath();
+        ctx2.stroke();
     });
     
-    // Curved arrows
-    ctx2.beginPath();
-    ctx2.moveTo(cx-100, cy-50); ctx2.quadraticCurveTo(cx-150, cy-100, cx-60, cy-80);
-    ctx2.stroke();
-    ctx2.beginPath();
-    ctx2.moveTo(cx+100, cy-50); ctx2.quadraticCurveTo(cx+150, cy-100, cx+60, cy-80);
-    ctx2.stroke();
+    // --- ENEMY POSITIONS (X marks) ---
+    ctx2.strokeStyle = '#dc2626';
+    ctx2.lineWidth = 2.5;
+    let enemyPositions = [
+        [cx, cy - 80],
+        [cx - 80, cy - 50], [cx + 80, cy - 50],
+        [cx - 40, cy - 20], [cx + 40, cy - 20],
+    ];
+    enemyPositions.forEach(p => {
+        ctx2.beginPath(); ctx2.moveTo(p[0]-7, p[1]-7); ctx2.lineTo(p[0]+7, p[1]+7); ctx2.stroke();
+        ctx2.beginPath(); ctx2.moveTo(p[0]+7, p[1]-7); ctx2.lineTo(p[0]-7, p[1]+7); ctx2.stroke();
+    });
+    
+    // --- TACTICAL ARROWS (curved, hand-drawn) ---
+    ctx2.strokeStyle = '#dc2626';
+    ctx2.lineWidth = 2;
+    ctx2.setLineDash([6, 4]);
+    
+    // Left flank arrow
+    drawScribbleArrow(ctx2, cx - 90, cy + 45, cx - 100, cy - 20);
+    // Right flank arrow  
+    drawScribbleArrow(ctx2, cx + 90, cy + 45, cx + 100, cy - 20);
+    // Center push
+    drawScribbleArrow(ctx2, cx, cy + 5, cx, cy - 40);
+    
+    // Pincer movement arrows
+    ctx2.strokeStyle = '#2563eb';
+    drawScribbleArrow(ctx2, cx - 50, cy - 30, cx - 80, cy - 60);
+    drawScribbleArrow(ctx2, cx + 50, cy - 30, cx + 80, cy - 60);
     
     ctx2.setLineDash([]);
+    
+    // Scribbled text annotations
+    ctx2.fillStyle = '#1a1817';
+    ctx2.font = "italic 9px 'Special Elite'";
+    ctx2.save();
+    ctx2.translate(cx - 130, cy - 10);
+    ctx2.rotate(-0.15);
+    ctx2.fillText('flank!', 0, 0);
+    ctx2.restore();
+    
+    ctx2.save();
+    ctx2.translate(cx + 95, cy - 10);
+    ctx2.rotate(0.12);
+    ctx2.fillText('push →', 0, 0);
+    ctx2.restore();
+    
+    ctx2.save();
+    ctx2.translate(cx - 20, cy - 95);
+    ctx2.rotate(-0.08);
+    ctx2.fillText('TARGET', 0, 0);
+    ctx2.restore();
+}
+
+function drawScribbleArrow(ctx2, x1, y1, x2, y2) {
+    // Hand-drawn wobbly arrow
+    ctx2.beginPath();
+    let steps = 8;
+    for (let i = 0; i <= steps; i++) {
+        let t = i / steps;
+        let x = x1 + (x2 - x1) * t + Math.sin(i * 4) * 3;
+        let y = y1 + (y2 - y1) * t + Math.cos(i * 3) * 3;
+        if (i === 0) ctx2.moveTo(x, y);
+        else ctx2.lineTo(x, y);
+    }
+    ctx2.stroke();
+    
+    // Arrowhead
+    let angle = Math.atan2(y2 - y1, x2 - x1);
+    ctx2.beginPath();
+    ctx2.moveTo(x2, y2);
+    ctx2.lineTo(x2 - 10 * Math.cos(angle - 0.4), y2 - 10 * Math.sin(angle - 0.4));
+    ctx2.moveTo(x2, y2);
+    ctx2.lineTo(x2 - 10 * Math.cos(angle + 0.4), y2 - 10 * Math.sin(angle + 0.4));
+    ctx2.stroke();
 }
 
 function launchSkirmish() {
@@ -1288,6 +1478,44 @@ function executeFleetCommand(cmdId) {
                 });
             }
             break;
+        case 'engage': {
+            // ENGAGE: one group secures zone, rest flank enemies strategically
+            let shieldUnits = targets.filter(t => t.shipClass === 'Shield');
+            let nonShield = targets.filter(t => t.shipClass !== 'Shield');
+            let zoneCount = Math.max(1, Math.ceil(nonShield.length * 0.4));
+            let zoneGroup = nonShield.slice(0, zoneCount).concat(shieldUnits);
+            let flankGroup = nonShield.slice(zoneCount);
+            
+            // Zone group: secure control zone
+            if (centerTerritory) {
+                zoneGroup.forEach((s, i) => {
+                    let angle = (Math.PI * 2 / Math.max(1, zoneGroup.length)) * i;
+                    let r = centerTerritory.radius * 0.6;
+                    s.commandOverride = { type: 'move', pos: new Vector(
+                        centerTerritory.pos.x + Math.cos(angle) * r,
+                        centerTerritory.pos.y + Math.sin(angle) * r
+                    ), persistent: true };
+                    s.commandPersistent = true;
+                    s.inFormation = false;
+                });
+            }
+            
+            // Flank group: engage enemies with flanking, attempt 2v1
+            let enemyShips = entities.filter(e => e.faction.id === 2 && !e.isDead && e.type === 'Ship');
+            flankGroup.forEach((s, i) => {
+                if (enemyShips.length > 0) {
+                    s.commandOverride = { type: 'attack', target: enemyShips[i % enemyShips.length], persistent: true };
+                    s.commandPersistent = true;
+                    s.inFormation = false;
+                    s.personality = 'Flanker';
+                } else if (eMS) {
+                    s.commandOverride = { type: 'attack', target: eMS, persistent: true };
+                    s.commandPersistent = true;
+                    s.inFormation = false;
+                }
+            });
+            break;
+        }
         case 'assault':
             if (eMS) targets.forEach(e => { 
                 e.commandOverride = { type: 'attack', target: eMS, persistent: true }; 
@@ -1535,13 +1763,27 @@ class Entity {
     }
     takeDamage(amount, attackerAngle) {
         if (this.shieldTimer > 0) amount *= 0.1;
-        // Facing awareness: rear hits take extra damage
-        if (attackerAngle !== undefined && this.type === 'Ship') {
+        // Shield unit frontal damage reduction
+        if (this.type === 'Ship' && this.shipClass === 'Shield' && attackerAngle !== undefined) {
             let facingAngle = this.angle;
             let angleDiff = Math.abs(((attackerAngle - facingAngle + Math.PI * 3) % (Math.PI * 2)) - Math.PI);
-            // angleDiff near 0 = hit from behind, near PI = hit from front
+            if (angleDiff > Math.PI * 0.5) { // Frontal hit
+                amount *= 0.4; // 60% frontal damage reduction
+            }
+        }
+        // Facing awareness: rear hits take extra damage
+        if (attackerAngle !== undefined && this.type === 'Ship' && this.shipClass !== 'Shield') {
+            let facingAngle = this.angle;
+            let angleDiff = Math.abs(((attackerAngle - facingAngle + Math.PI * 3) % (Math.PI * 2)) - Math.PI);
             if (angleDiff < Math.PI * 0.4) {
                 amount *= REAR_DAMAGE_MULTIPLIER; // Rear hit
+            }
+        }
+        // Shield unit aura: nearby allies take less frontal damage
+        if (this.type === 'Ship') {
+            let nearbyShield = entities.find(e => e.faction && e.faction.id === this.faction.id && !e.isDead && e.type === 'Ship' && e.shipClass === 'Shield' && e !== this && this.pos.dist(e.pos) < 200);
+            if (nearbyShield) {
+                amount *= 0.8; // 20% damage reduction from nearby Shield unit
             }
         }
         this.hp -= amount;
@@ -1681,6 +1923,22 @@ class MotherShip extends Entity {
             return;
         }
         
+        // Priority 2.5: ATTACK PLAYER MOTHERSHIP if zone is secured and path is clear
+        if (centerTerritory && centerTerritory.owner === 2 && pMS) {
+            let pShipsNearMS = entities.filter(e => e.faction.id === 1 && !e.isDead && e.type === 'Ship' && pMS.pos.dist(e.pos) < 600);
+            // If control zone held AND player fleet is out of position
+            if (pShipsNearMS.length < 3) {
+                // Send part of fleet to attack player mothership
+                let attackForce = eShips.filter(s => !s.commandPersistent).slice(0, Math.ceil(eShips.length * 0.5));
+                attackForce.forEach(s => {
+                    s.commandOverride = { type: 'attack', target: pMS, persistent: true };
+                    s.commandPersistent = true;
+                    s.inFormation = false;
+                });
+                if (attackForce.length > 0) return;
+            }
+        }
+        
         // Priority 3: Is flank exposed?
         let leftFlank = eShips.filter(s => s.pos.x < this.pos.x - 300);
         let rightFlank = eShips.filter(s => s.pos.x > this.pos.x + 300);
@@ -1688,7 +1946,6 @@ class MotherShip extends Entity {
         let pShipsRight = entities.filter(e => e.faction.id === 1 && !e.isDead && e.type === 'Ship' && e.pos.x > this.pos.x + 200);
         
         if (pShipsLeft.length > leftFlank.length * 2 && leftFlank.length > 0) {
-            // Rotate formation to cover left
             if (enemyFormationAnchor) { enemyFormationAnchor.x -= 150; applyFormationToFleet(2, enemyFormation); }
             return;
         }
@@ -1697,7 +1954,35 @@ class MotherShip extends Entity {
             return;
         }
         
-        // Priority 4: Default → maintain formation and advance slowly toward objective
+        // Priority 4: Evaluate flanking opportunities on isolated player ships
+        let isolatedPlayerShips = entities.filter(e => e.faction.id === 1 && !e.isDead && e.type === 'Ship').filter(ps => {
+            let nearbyAllies = entities.filter(a => a.faction.id === 1 && a !== ps && !a.isDead && a.type === 'Ship' && ps.pos.dist(a.pos) < 300);
+            return nearbyAllies.length <= 1;
+        });
+        if (isolatedPlayerShips.length > 0 && eShips.length > 3) {
+            // Send 2 ships to double-team the most isolated target
+            let target = isolatedPlayerShips[0];
+            let freeShips = eShips.filter(s => !s.commandPersistent).slice(0, 2);
+            freeShips.forEach(s => {
+                s.commandOverride = { type: 'attack', target: target, persistent: false };
+                s.inFormation = false;
+            });
+            if (freeShips.length > 0) return;
+        }
+        
+        // Priority 5: Protect allied Shield Units
+        let aiShieldUnits = eShips.filter(s => s.shipClass === 'Shield');
+        aiShieldUnits.forEach(su => {
+            let threatToShield = entities.find(e => e.faction.id === 1 && !e.isDead && e.type === 'Ship' && su.pos.dist(e.pos) < su.baseRange * 1.5);
+            if (threatToShield) {
+                let guard = eShips.find(s => s.shipClass !== 'Shield' && !s.commandPersistent && su.pos.dist(s.pos) < 400);
+                if (guard) {
+                    guard.commandOverride = { type: 'attack', target: threatToShield, persistent: false };
+                }
+            }
+        });
+        
+        // Priority 6: Default → maintain formation and advance slowly toward objective
         if (centerTerritory && enemyFormationAnchor) {
             let dx = centerTerritory.pos.x - enemyFormationAnchor.x;
             let dy = centerTerritory.pos.y - enemyFormationAnchor.y;
@@ -1708,7 +1993,6 @@ class MotherShip extends Entity {
                 applyFormationToFleet(2, enemyFormation);
             }
         }
-    }
 
     draw(ctx, isMenu=false) {
         if (this.isDead && !isMenu) return;
@@ -1818,6 +2102,11 @@ class Ship extends Entity {
         } else if (this.shipClass === 'Support') {
             this.pBase = [{x: rad*0.8, y: -rad*0.4}, {x: rad*0.8, y: rad*0.4}, {x: -rad*1.2, y: rad*0.7+this.asym[0]}, {x: -rad*1.2, y: -rad*0.7+this.asym[1]}];
             this.pColor = [{x: rad*0.4, y: -rad*0.2}, {x: rad*0.4, y: rad*0.2}, {x: -rad*0.4, y: rad*0.2}, {x: -rad*0.4, y: -rad*0.2}];
+        } else if (this.shipClass === 'Shield') {
+            // Wide, flat shield ship - broad front
+            this.pBase = [{x: rad*0.6, y: -rad*1.2}, {x: rad*0.6, y: rad*1.2}, {x: -rad*0.8, y: rad*0.8+this.asym[0]}, {x: -rad*0.8, y: -rad*0.8+this.asym[1]}];
+            this.pColor = [{x: rad*0.5, y: -rad*1.0}, {x: rad*0.5, y: rad*1.0}, {x: rad*0.1, y: rad*0.8}, {x: rad*0.1, y: -rad*0.8}];
+            this.pAccent = [{x: -rad*0.3, y: -rad*0.5}, {x: -rad*0.3, y: rad*0.5}, {x: -rad*0.7, y: rad*0.3}, {x: -rad*0.7, y: -rad*0.3}];
         }
     }
 
@@ -1899,8 +2188,8 @@ class Ship extends Entity {
             return;
         }
 
-        // Morale break: low morale causes retreat to MS
-        if (factionMorale < 25 && !this.commandPersistent && Math.random() < 0.005) {
+        // Morale break: low morale causes retreat to MS — ONLY if no persistent command
+        if (factionMorale < 25 && !this.commandPersistent && !this.commandOverride && Math.random() < 0.003) {
             if (myMS && !myMS.isDead) {
                 this.state = 'Fleeing';
                 this.commandOverride = { type: 'move', pos: new Vector(myMS.pos.x + randomRange(-200, 200), myMS.pos.y + randomRange(-100, 100)) };
@@ -2038,12 +2327,12 @@ class Ship extends Entity {
         let discipline = this.faction.id === 1 ? playerDiscipline : enemyDiscipline;
         let discMode = DISCIPLINE_MODES[discipline];
         
-        // Fleeing override for AI based on morale
-        if (factionMorale < 25 && !this.commandPersistent && this.faction.id !== 1 && Math.random() < 0.01) { 
+        // Fleeing override for AI based on morale - ONLY without persistent commands
+        if (factionMorale < 25 && !this.commandPersistent && !this.commandOverride && this.faction.id !== 1 && Math.random() < 0.005) { 
             this.state = 'Fleeing'; 
         }
 
-        if (this.state === 'Fleeing' && !this.commandPersistent) {
+        if (this.state === 'Fleeing' && !this.commandPersistent && !this.commandOverride) {
             if (myMS && !myMS.isDead) {
                 this.applyForce(this.seek(myMS.pos));
             } else {
@@ -2489,6 +2778,19 @@ class Ship extends Entity {
             drawGear(ctx, -rad*0.2, 0, rad*0.4, 6, this.gearRot, baseColor, strokeColor);
             ctx.fillStyle = currentTheme==='oasis' ? '#00ffcc' : '#00ff00';
             ctx.beginPath(); ctx.arc(rad*0.3, 0, rad*0.2, 0, Math.PI*2); ctx.fill(); ctx.stroke();
+        } else if (this.shipClass === 'Shield') {
+            // Shield unit: draw a broad frontal shield arc
+            ctx.strokeStyle = this.faction.color;
+            ctx.lineWidth = 5;
+            ctx.beginPath(); ctx.arc(rad*0.3, 0, rad*1.1, -Math.PI*0.6, Math.PI*0.6); ctx.stroke();
+            ctx.lineWidth = 2;
+            ctx.strokeStyle = strokeColor;
+            ctx.beginPath(); ctx.arc(rad*0.3, 0, rad*0.9, -Math.PI*0.5, Math.PI*0.5); ctx.stroke();
+            // Shield aura indicator
+            if (!isMenu) {
+                ctx.beginPath(); ctx.arc(0, 0, 200 / (camera ? camera.zoom : 1), 0, Math.PI*2);
+                ctx.fillStyle = 'rgba(0,128,128,0.05)'; ctx.fill();
+            }
         } else if (this.shipClass === 'Destroyer') {
             let tAng = this.target ? Math.atan2(this.target.pos.y - this.pos.y, this.target.pos.x - this.pos.x) - this.angle : 0;
             ctx.save(); ctx.translate(rad*0.2, -rad*0.3); ctx.rotate(tAng);
