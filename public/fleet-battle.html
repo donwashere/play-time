@@ -1570,36 +1570,57 @@ function executeFleetCommand(cmdId) {
             }
             break;
         case 'reinforce_fallen': {
-            // Spawn replacement ships without recalling existing fleet
+            // Spawn replacement ships WITHOUT affecting existing fleet AT ALL
             if (!pMS || pMS.isDead) break;
             let currentCount = getFleetCount(1);
             let slotsOpen = MAX_FLEET_PER_SIDE - currentCount;
             if (slotsOpen <= 0) { showNotification('Fleet cap reached!'); break; }
             if (playerEnergy < 40) { showNotification('Not enough energy (40 KW)'); break; }
             playerEnergy -= 40;
+            
+            // IMPORTANT: Save all existing ship states before spawning
+            let existingShips = entities.filter(e => e.faction.id === 1 && e.type === 'Ship' && !e.isDead);
+            let savedStates = existingShips.map(s => ({
+                id: s.id,
+                commandOverride: s.commandOverride,
+                commandPersistent: s.commandPersistent,
+                inFormation: s.inFormation,
+                formationTarget: s.formationTarget ? s.formationTarget.copy() : null,
+                state: s.state
+            }));
+            
             let spawned = 0;
             for (let i = 0; i < Math.min(3, slotsOpen); i++) {
                 let cl = Math.random() > 0.5 ? 'Frigate' : 'Destroyer';
                 let ship = new Ship(pMS.pos.x + randomRange(-150,150), pMS.pos.y + randomRange(50,150), getPlayerFaction(), cl);
-                // Auto-assign to nearest active formation or contested objective
-                let nearestAnchor = playerFormationAnchor;
-                if (centerTerritory && centerTerritory.owner !== 1) {
+                // New ships move to nearest friendly group or contested objective
+                let friendlyShips = existingShips.filter(s => !s.isDead);
+                if (friendlyShips.length > 0) {
+                    // Find nearest group of friendlies
+                    let nearest = friendlyShips.reduce((a, b) => ship.pos.dist(a.pos) < ship.pos.dist(b.pos) ? a : b);
+                    ship.commandOverride = { type: 'move', pos: new Vector(nearest.pos.x + randomRange(-80,80), nearest.pos.y + randomRange(-80,80)), persistent: false };
+                } else if (centerTerritory && centerTerritory.owner !== 1) {
                     ship.commandOverride = { type: 'move', pos: new Vector(centerTerritory.pos.x + randomRange(-100,100), centerTerritory.pos.y + randomRange(-100,100)), persistent: false };
-                    ship.inFormation = false;
-                } else if (nearestAnchor) {
-                    ship.inFormation = true;
-                } else {
-                    ship.inFormation = false;
                 }
-                // Don't require global staging - just go
+                ship.inFormation = false;
                 ship.stagingState = false;
                 entities.push(ship);
                 spawned++;
             }
-            if (spawned > 0) {
-                if (playerFormationAnchor) applyFormationToFleet(1, playerFormation);
-                showNotification('Reinforced: ' + spawned + ' ships deployed');
-            }
+            
+            // CRITICAL: Restore all existing ship states - prevent any side effects
+            savedStates.forEach(saved => {
+                let ship = entities.find(e => e.id === saved.id && !e.isDead);
+                if (ship) {
+                    ship.commandOverride = saved.commandOverride;
+                    ship.commandPersistent = saved.commandPersistent;
+                    ship.inFormation = saved.inFormation;
+                    ship.formationTarget = saved.formationTarget;
+                    ship.state = saved.state;
+                }
+            });
+            
+            if (spawned > 0) showNotification('Reinforced: ' + spawned + ' ships deployed');
             updateFleetUI();
             break;
         }
@@ -1785,9 +1806,37 @@ class Entity {
             if (nearbyShield) {
                 amount *= 0.8; // 20% damage reduction from nearby Shield unit
             }
+            // Component damage: shield damaged = take more damage
+            if (this.shieldDamaged) {
+                amount *= 1.15; // 15% more damage taken
+            }
         }
+        
+        // Track last damage frame for health regen
+        if (this.type === 'Ship') {
+            this.lastDamageFrame = frameCount;
+        }
+        
         this.hp -= amount;
         if (this.faction) matchStats.totalDamageDealt += amount;
+        
+        // Component damage triggers at health thresholds
+        if (this.type === 'Ship' && this.hp > 0) {
+            let hpPct = this.hp / this.maxHp;
+            if (hpPct <= 0.75 && !this.damageTrigger75) {
+                this.damageTrigger75 = true;
+                this.applyRandomComponentDamage();
+            }
+            if (hpPct <= 0.50 && !this.damageTrigger50) {
+                this.damageTrigger50 = true;
+                this.applyRandomComponentDamage();
+            }
+            if (hpPct <= 0.25 && !this.damageTrigger25) {
+                this.damageTrigger25 = true;
+                this.applyRandomComponentDamage();
+            }
+        }
+        
         if (this.hp <= 0 && !this.isDead) { this.hp = 0; this.die(); }
     }
     die() {
@@ -1897,8 +1946,9 @@ class MotherShip extends Entity {
         if (eShips.length === 0) return;
         
         let pMS = entities.find(e => e.type === 'MotherShip' && e.faction.id === 1 && !e.isDead);
+        let pShips = entities.filter(e => e.faction.id === 1 && !e.isDead && e.type === 'Ship');
         
-        // Priority 1: Is control zone being lost?
+        // Priority 1: Is control zone being contested/lost?
         if (centerTerritory && centerTerritory.owner === 1) {
             // Contest: move formation toward control zone
             if (enemyFormationAnchor) {
@@ -1911,24 +1961,65 @@ class MotherShip extends Entity {
                     applyFormationToFleet(2, enemyFormation);
                 }
             }
+            // Also send free ships to attack player ships near zone
+            let pShipsInZone = pShips.filter(ps => centerTerritory.pos.dist(ps.pos) < centerTerritory.radius * 1.5);
+            if (pShipsInZone.length > 0) {
+                let freeShips = eShips.filter(s => !s.commandPersistent).slice(0, Math.min(3, pShipsInZone.length));
+                freeShips.forEach((s, i) => {
+                    s.commandOverride = { type: 'attack', target: pShipsInZone[i % pShipsInZone.length], persistent: false };
+                    s.inFormation = false;
+                });
+            }
             return;
         }
         
         // Priority 2: Is enemy threatening mothership?
         let threatsToMS = entities.filter(e => e.faction.id === 1 && !e.isDead && e.type === 'Ship' && this.pos.dist(e.pos) < this.auraRadius * 1.5);
-        if (threatsToMS.length >= 3) {
-            // Intercept: pull formation back to defend
-            enemyFormationAnchor = new Vector(this.pos.x, this.pos.y + 200);
-            applyFormationToFleet(2, 'circle');
+        if (threatsToMS.length >= 2) {
+            // Intercept: pull some ships back to defend, keep others on offense
+            let defenders = eShips.filter(s => !s.commandPersistent).slice(0, Math.ceil(eShips.length * 0.5));
+            defenders.forEach(s => {
+                let closestThreat = threatsToMS.reduce((a, b) => s.pos.dist(a.pos) < s.pos.dist(b.pos) ? a : b);
+                s.commandOverride = { type: 'attack', target: closestThreat, persistent: false };
+                s.inFormation = false;
+            });
             return;
         }
         
-        // Priority 2.5: ATTACK PLAYER MOTHERSHIP if zone is secured and path is clear
-        if (centerTerritory && centerTerritory.owner === 2 && pMS) {
-            let pShipsNearMS = entities.filter(e => e.faction.id === 1 && !e.isDead && e.type === 'Ship' && pMS.pos.dist(e.pos) < 600);
-            // If control zone held AND player fleet is out of position
-            if (pShipsNearMS.length < 3) {
-                // Send part of fleet to attack player mothership
+        // Priority 3: ATTACK PLAYER MOTHERSHIP - zone secured OR zone contested but player fleet weak
+        if (pMS) {
+            let zoneSecured = centerTerritory && centerTerritory.owner === 2;
+            let zoneContested = centerTerritory && centerTerritory.owner === 0;
+            let pShipsNearZone = pShips.filter(ps => centerTerritory && centerTerritory.pos.dist(ps.pos) < centerTerritory.radius * 2);
+            let pShipsNearMS = pShips.filter(ps => pMS.pos.dist(ps.pos) < 800);
+            
+            if (zoneSecured && pShipsNearZone.length === 0) {
+                // Zone fully secured, no defenders - ALL-IN on mothership
+                let zoneGuards = Math.max(2, Math.floor(eShips.length * 0.25));
+                let zoneKeepers = eShips.slice(0, zoneGuards);
+                let attackForce = eShips.slice(zoneGuards);
+                
+                // Zone keepers hold position
+                zoneKeepers.forEach(s => {
+                    if (!s.commandPersistent) {
+                        s.commandOverride = { type: 'move', pos: new Vector(
+                            centerTerritory.pos.x + randomRange(-100, 100),
+                            centerTerritory.pos.y + randomRange(-100, 100)
+                        ), persistent: true };
+                        s.commandPersistent = true;
+                        s.inFormation = false;
+                    }
+                });
+                
+                // Attack force pushes mothership
+                attackForce.forEach(s => {
+                    s.commandOverride = { type: 'attack', target: pMS, persistent: true };
+                    s.commandPersistent = true;
+                    s.inFormation = false;
+                });
+                return;
+            } else if (zoneSecured && pShipsNearMS.length < 3) {
+                // Zone secured, mothership lightly defended - send raiders
                 let attackForce = eShips.filter(s => !s.commandPersistent).slice(0, Math.ceil(eShips.length * 0.5));
                 attackForce.forEach(s => {
                     s.commandOverride = { type: 'attack', target: pMS, persistent: true };
@@ -1936,14 +2027,23 @@ class MotherShip extends Entity {
                     s.inFormation = false;
                 });
                 if (attackForce.length > 0) return;
+            } else if (zoneContested && pShips.length < eShips.length * 0.5) {
+                // Player fleet is weak - pressure mothership with some ships
+                let raiders = eShips.filter(s => !s.commandPersistent).slice(0, Math.ceil(eShips.length * 0.3));
+                raiders.forEach(s => {
+                    s.commandOverride = { type: 'attack', target: pMS, persistent: true };
+                    s.commandPersistent = true;
+                    s.inFormation = false;
+                });
+                if (raiders.length > 0) return;
             }
         }
         
-        // Priority 3: Is flank exposed?
+        // Priority 4: Is flank exposed?
         let leftFlank = eShips.filter(s => s.pos.x < this.pos.x - 300);
         let rightFlank = eShips.filter(s => s.pos.x > this.pos.x + 300);
-        let pShipsLeft = entities.filter(e => e.faction.id === 1 && !e.isDead && e.type === 'Ship' && e.pos.x < this.pos.x - 200);
-        let pShipsRight = entities.filter(e => e.faction.id === 1 && !e.isDead && e.type === 'Ship' && e.pos.x > this.pos.x + 200);
+        let pShipsLeft = pShips.filter(e => e.pos.x < this.pos.x - 200);
+        let pShipsRight = pShips.filter(e => e.pos.x > this.pos.x + 200);
         
         if (pShipsLeft.length > leftFlank.length * 2 && leftFlank.length > 0) {
             if (enemyFormationAnchor) { enemyFormationAnchor.x -= 150; applyFormationToFleet(2, enemyFormation); }
@@ -1954,13 +2054,12 @@ class MotherShip extends Entity {
             return;
         }
         
-        // Priority 4: Evaluate flanking opportunities on isolated player ships
-        let isolatedPlayerShips = entities.filter(e => e.faction.id === 1 && !e.isDead && e.type === 'Ship').filter(ps => {
-            let nearbyAllies = entities.filter(a => a.faction.id === 1 && a !== ps && !a.isDead && a.type === 'Ship' && ps.pos.dist(a.pos) < 300);
+        // Priority 5: Double-team isolated player ships
+        let isolatedPlayerShips = pShips.filter(ps => {
+            let nearbyAllies = pShips.filter(a => a !== ps && ps.pos.dist(a.pos) < 300);
             return nearbyAllies.length <= 1;
         });
         if (isolatedPlayerShips.length > 0 && eShips.length > 3) {
-            // Send 2 ships to double-team the most isolated target
             let target = isolatedPlayerShips[0];
             let freeShips = eShips.filter(s => !s.commandPersistent).slice(0, 2);
             freeShips.forEach(s => {
@@ -1970,7 +2069,7 @@ class MotherShip extends Entity {
             if (freeShips.length > 0) return;
         }
         
-        // Priority 5: Protect allied Shield Units
+        // Priority 6: Protect allied Shield Units
         let aiShieldUnits = eShips.filter(s => s.shipClass === 'Shield');
         aiShieldUnits.forEach(su => {
             let threatToShield = entities.find(e => e.faction.id === 1 && !e.isDead && e.type === 'Ship' && su.pos.dist(e.pos) < su.baseRange * 1.5);
@@ -1982,14 +2081,26 @@ class MotherShip extends Entity {
             }
         });
         
-        // Priority 6: Default → maintain formation and advance slowly toward objective
+        // Priority 7: Attack nearby player ships aggressively
+        if (pShips.length > 0) {
+            let freeShips = eShips.filter(s => !s.commandPersistent && !s.commandOverride);
+            freeShips.forEach(s => {
+                let nearest = pShips.reduce((a, b) => s.pos.dist(a.pos) < s.pos.dist(b.pos) ? a : b);
+                if (s.pos.dist(nearest.pos) < s.detectionRange * 1.5) {
+                    s.commandOverride = { type: 'attack', target: nearest, persistent: false };
+                    s.inFormation = false;
+                }
+            });
+        }
+        
+        // Priority 8: Default → advance toward objective (never idle)
         if (centerTerritory && enemyFormationAnchor) {
             let dx = centerTerritory.pos.x - enemyFormationAnchor.x;
             let dy = centerTerritory.pos.y - enemyFormationAnchor.y;
             let dist = Math.sqrt(dx*dx + dy*dy);
             if (dist > 100) {
-                enemyFormationAnchor.x += (dx / dist) * 80;
-                enemyFormationAnchor.y += (dy / dist) * 80;
+                enemyFormationAnchor.x += (dx / dist) * 120;
+                enemyFormationAnchor.y += (dy / dist) * 120;
                 applyFormationToFleet(2, enemyFormation);
             }
         }
@@ -2078,8 +2189,39 @@ class Ship extends Entity {
 
         // Cohesion tracking
         this.cohesionPenalty = 0; // 0-1, affects speed and accuracy
+        
+        // Health regeneration tracking
+        this.lastDamageFrame = 0; // frame when last took damage
+        this.regenCooldownFrames = 180; // 3 seconds at 60fps
+        
+        // Component damage system
+        this.thrusterDamaged = false;  // slower movement
+        this.weaponDamaged = false;    // slower fire rate
+        this.shieldDamaged = false;    // takes more damage
+        this.sensorDamaged = false;    // slower reaction (AI timer)
+        this.damageTrigger75 = false;
+        this.damageTrigger50 = false;
+        this.damageTrigger25 = false;
 
         this.genPlates();
+    }
+
+    applyRandomComponentDamage() {
+        let systems = ['thruster', 'weapon', 'shield', 'sensor'];
+        let undamaged = systems.filter(s => {
+            if (s === 'thruster') return !this.thrusterDamaged;
+            if (s === 'weapon') return !this.weaponDamaged;
+            if (s === 'shield') return !this.shieldDamaged;
+            if (s === 'sensor') return !this.sensorDamaged;
+        });
+        if (undamaged.length === 0) return;
+        let pick = undamaged[Math.floor(Math.random() * undamaged.length)];
+        switch (pick) {
+            case 'thruster': this.thrusterDamaged = true; showNotification(this.shipClass + ': Thrusters damaged!'); break;
+            case 'weapon': this.weaponDamaged = true; showNotification(this.shipClass + ': Weapons damaged!'); break;
+            case 'shield': this.shieldDamaged = true; showNotification(this.shipClass + ': Shields damaged!'); break;
+            case 'sensor': this.sensorDamaged = true; showNotification(this.shipClass + ': Sensors damaged!'); break;
+        }
     }
 
     genPlates() {
@@ -2122,9 +2264,23 @@ class Ship extends Entity {
         // Overdrive timer
         if (this.overdriveTimer > 0) { this.overdriveTimer -= timeScale; speedMult *= 1.8; }
         
+        // Component damage: thruster damaged = slower
+        if (this.thrusterDamaged) speedMult *= 0.65;
+        
+        // Component damage: sensor damaged = slower AI reaction
+        if (this.sensorDamaged && this.aiTimer > 0) this.aiTimer += 0.5 * timeScale;
+        
         // Cohesion penalty: reduce speed and accuracy when far from formation
         this.updateCohesion();
         speedMult *= (1 - this.cohesionPenalty * 0.4); // Up to 40% speed reduction
+        
+        // --- HEALTH REGENERATION (out of combat) ---
+        if (this.hp < this.maxHp * 0.6 && (frameCount - this.lastDamageFrame) > this.regenCooldownFrames) {
+            // +1% max HP per second (1 per 60 frames)
+            if (frameCount % 60 === 0) {
+                this.hp = Math.min(this.maxHp * 0.6, this.hp + this.maxHp * 0.01);
+            }
+        }
         
         if (activeCondition.id === 'ScrapStorm' && Math.random() < 0.005) this.takeDamage(2);
 
@@ -2279,7 +2435,8 @@ class Ship extends Entity {
                             lasers.push(new Laser(nx, ny, targetPos, this.faction.light, finalDmg, this.faction.id === 1, this.id));
                         }
                     }
-                    this.fireTimer = this.fireRate * (factionMorale > 70 ? 0.8 : 1.0); 
+                    let fireRateMult = (factionMorale > 70 ? 0.8 : 1.0) * (this.weaponDamaged ? 1.5 : 1.0);
+                    this.fireTimer = this.fireRate * fireRateMult; 
                 }
             }
         }
@@ -2508,7 +2665,58 @@ class Ship extends Entity {
             } else {
                 this.state = dist < this.detectionRange ? 'EngageEnemy' : 'PursueEnemy';
             }
-            this.maneuverAroundTarget();
+            
+            // --- TACTICAL TRIANGLE FORMATION ---
+            // When engaging, coordinate with nearby allies for front/flank/support roles
+            let nearbyAllies = entities.filter(a => a.faction.id === this.faction.id && a !== this && !a.isDead && a.type === 'Ship' && this.pos.dist(a.pos) < 400 && a.target === this.target);
+            
+            if (nearbyAllies.length >= 2) {
+                // 3+ ships: tactical triangle
+                let allEngaging = [this, ...nearbyAllies].sort((a, b) => a.pos.dist(this.target.pos) - b.pos.dist(this.target.pos));
+                let myIndex = allEngaging.indexOf(this);
+                
+                if (myIndex === 0) {
+                    // Front attacker: charge head-on
+                    this.maneuverAroundTarget();
+                } else if (myIndex === 1) {
+                    // Side flanker: approach from the side
+                    let ang = Math.atan2(this.target.pos.y - this.pos.y, this.target.pos.x - this.pos.x);
+                    let flankAngle = ang + (Math.PI / 3); // 60 degree flank
+                    let flankPos = new Vector(
+                        this.target.pos.x - Math.cos(flankAngle) * this.baseRange * 0.7,
+                        this.target.pos.y - Math.sin(flankAngle) * this.baseRange * 0.7
+                    );
+                    this.applyForce(this.seek(flankPos).mult(0.7));
+                } else {
+                    // Rear support: stay behind front attacker, protect and counter flankers
+                    let frontShip = allEngaging[0];
+                    let supportPos = new Vector(
+                        frontShip.pos.x - Math.cos(frontShip.angle) * 150,
+                        frontShip.pos.y - Math.sin(frontShip.angle) * 150
+                    );
+                    this.applyForce(this.seek(supportPos).mult(0.5));
+                    // Check for enemies flanking the front attacker
+                    let flanker = entities.find(e => e.faction.id !== this.faction.id && !e.isDead && e.type === 'Ship' && e !== this.target && frontShip.pos.dist(e.pos) < 350);
+                    if (flanker) {
+                        this.target = flanker;
+                    }
+                }
+            } else if (nearbyAllies.length === 1) {
+                // 2 ships: one attacks, one protects
+                let pair = [this, nearbyAllies[0]].sort((a, b) => a.hp - b.hp);
+                if (pair[0] === this) {
+                    // Lower HP = support role: counter incoming enemies
+                    let flanker = entities.find(e => e.faction.id !== this.faction.id && !e.isDead && e.type === 'Ship' && e !== this.target && nearbyAllies[0].pos.dist(e.pos) < 400);
+                    if (flanker) {
+                        this.target = flanker;
+                    }
+                    this.maneuverAroundTarget();
+                } else {
+                    this.maneuverAroundTarget();
+                }
+            } else {
+                this.maneuverAroundTarget();
+            }
         } else {
             this.state = 'Idle';
             this.vel.mult(0.98); 
@@ -3256,6 +3464,12 @@ function updateFleetUI() {
         if (s.ambushMode) targetText = 'AMBUSH';
         if (s.weaponsDisabled) targetText += ' [WPN OFF]';
         if (s.cohesionPenalty > 0.2) targetText += ' [LOW COH]';
+        let dmgIcons = '';
+        if (s.thrusterDamaged) dmgIcons += '🔧';
+        if (s.weaponDamaged) dmgIcons += '💥';
+        if (s.shieldDamaged) dmgIcons += '🛡';
+        if (s.sensorDamaged) dmgIcons += '📡';
+        if (dmgIcons) targetText += ' ' + dmgIcons;
         html += `<div class="border-b border-gray-400 pb-1 mb-1 ${selBg}">
             <div class="flex justify-between"><span>${s.shipClass.substring(0,3).toUpperCase()}-${s.id.substring(0,3)}</span><span class="${hpColor}">${Math.floor(s.hp)} HP</span></div>
             <div class="text-[10px] text-gray-700 font-normal">${targetText}</div>
