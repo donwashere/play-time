@@ -1,0 +1,1396 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>The Citadel (Homeworld)</title>
+<style>
+* { margin:0; padding:0; box-sizing:border-box; }
+body { background:#0a0a12; overflow:hidden; font-family:'Courier New',monospace; color:#e0e0e0; }
+canvas { display:block; }
+
+/* UI Overlay */
+#ui-overlay { position:fixed; top:0; left:0; width:100%; height:100%; pointer-events:none; z-index:10; }
+#ui-overlay > * { pointer-events:auto; }
+
+/* HUD */
+#hud { position:fixed; top:10px; left:10px; z-index:20; display:none; }
+#hud .stat { background:rgba(0,0,0,0.85); border:1px solid #2a4a6a; padding:4px 10px; margin-bottom:3px; font-size:12px; border-radius:3px; }
+#hud .stat .label { color:#6a9fd8; }
+#hud .stat .value { color:#fff; float:right; }
+
+/* District indicator */
+#district-bar { position:fixed; top:10px; left:50%; transform:translateX(-50%); z-index:20; display:none;
+  background:rgba(0,0,0,0.9); border:1px solid #3a6a9a; padding:6px 20px; border-radius:4px; font-size:14px; text-transform:uppercase; letter-spacing:2px; }
+#district-bar.safe { border-color:#2a8a4a; color:#4ade80; }
+#district-bar.danger { border-color:#8a2a2a; color:#f87171; animation:pulse-danger 1s infinite; }
+@keyframes pulse-danger { 0%,100%{opacity:1} 50%{opacity:0.7} }
+
+/* Minimap */
+#minimap { position:fixed; bottom:10px; right:10px; z-index:20; display:none;
+  width:180px; height:180px; background:rgba(0,0,0,0.85); border:1px solid #2a4a6a; border-radius:4px; }
+
+/* Inventory panel */
+#inventory-panel { position:fixed; right:10px; top:10px; z-index:20; display:none;
+  width:250px; max-height:400px; overflow-y:auto; background:rgba(0,0,0,0.92); border:1px solid #2a4a6a; border-radius:6px; padding:10px; }
+#inventory-panel h3 { color:#6a9fd8; font-size:13px; margin-bottom:8px; border-bottom:1px solid #1a3a5a; padding-bottom:4px; }
+.inv-item { display:flex; justify-content:space-between; padding:3px 0; font-size:11px; border-bottom:1px solid #111; }
+.inv-item .iname { color:#ccc; } .inv-item .iqty { color:#4ade80; }
+
+/* Shop modal */
+#shop-modal { position:fixed; top:50%; left:50%; transform:translate(-50%,-50%); z-index:30; display:none;
+  width:500px; max-height:500px; background:rgba(5,5,15,0.97); border:2px solid #3a6a9a; border-radius:8px; padding:20px; }
+#shop-modal h2 { color:#6a9fd8; font-size:16px; margin-bottom:12px; }
+.shop-item { display:flex; justify-content:space-between; align-items:center; padding:6px 0; border-bottom:1px solid #1a2a3a; font-size:12px; }
+.shop-item button { background:#1a4a7a; border:1px solid #3a6a9a; color:#fff; padding:3px 10px; border-radius:3px; cursor:pointer; font-size:11px; }
+.shop-item button:hover { background:#2a5a8a; }
+#shop-close { position:absolute; top:8px; right:12px; background:none; border:none; color:#f87171; font-size:18px; cursor:pointer; }
+
+/* Action prompts */
+#action-prompt { position:fixed; bottom:60px; left:50%; transform:translateX(-50%); z-index:20; display:none;
+  background:rgba(0,0,0,0.9); border:1px solid #4a7aaa; padding:8px 20px; border-radius:4px; font-size:13px; color:#8ac4ff; }
+
+/* Job panel */
+#job-panel { position:fixed; left:50%; top:50%; transform:translate(-50%,-50%); z-index:30; display:none;
+  width:400px; background:rgba(5,5,15,0.97); border:2px solid #3a6a9a; border-radius:8px; padding:20px; }
+#job-panel h2 { color:#6a9fd8; font-size:16px; margin-bottom:12px; }
+.job-item { padding:8px 0; border-bottom:1px solid #1a2a3a; font-size:12px; cursor:pointer; }
+.job-item:hover { color:#4ade80; }
+#job-close { position:absolute; top:8px; right:12px; background:none; border:none; color:#f87171; font-size:18px; cursor:pointer; }
+
+/* Race panel */
+#race-panel { position:fixed; left:50%; top:50%; transform:translate(-50%,-50%); z-index:30; display:none;
+  width:450px; background:rgba(5,5,15,0.97); border:2px solid #d97706; border-radius:8px; padding:20px; }
+#race-panel h2 { color:#fbbf24; font-size:16px; margin-bottom:12px; }
+#race-close { position:absolute; top:8px; right:12px; background:none; border:none; color:#f87171; font-size:18px; cursor:pointer; }
+
+/* Death screen */
+#death-screen { position:fixed; top:0; left:0; width:100%; height:100%; z-index:50; display:none;
+  background:rgba(10,0,0,0.95); flex-direction:column; align-items:center; justify-content:center; }
+#death-screen h1 { color:#f87171; font-size:48px; margin-bottom:20px; text-transform:uppercase; letter-spacing:6px; }
+#death-screen p { color:#aaa; font-size:14px; margin-bottom:30px; }
+#death-screen button { background:#8a2a2a; border:2px solid #f87171; color:#fff; padding:12px 30px; font-size:14px; cursor:pointer; border-radius:4px; font-family:inherit; }
+#death-screen button:hover { background:#a03030; }
+
+/* Entry screen */
+#entry-screen { position:fixed; top:0; left:0; width:100%; height:100%; z-index:40; display:flex;
+  background:rgba(5,5,15,0.98); flex-direction:column; align-items:center; justify-content:center; }
+#entry-screen h1 { color:#6a9fd8; font-size:42px; margin-bottom:10px; text-transform:uppercase; letter-spacing:4px; }
+#entry-screen .subtitle { color:#8a8a9a; font-size:14px; margin-bottom:30px; }
+#entry-screen .cost { color:#fbbf24; font-size:18px; margin-bottom:20px; }
+#entry-screen button { background:#1a4a7a; border:2px solid #3a6a9a; color:#fff; padding:14px 40px; font-size:16px; cursor:pointer; border-radius:4px; font-family:inherit; margin:5px; }
+#entry-screen button:hover { background:#2a5a8a; }
+#entry-screen .back-btn { background:#333; border-color:#555; }
+
+/* Notifications */
+#notifications { position:fixed; top:60px; left:50%; transform:translateX(-50%); z-index:25; }
+.notif { background:rgba(0,0,0,0.9); border:1px solid #3a6a9a; padding:8px 16px; margin-bottom:4px; border-radius:4px;
+  font-size:12px; color:#8ac4ff; animation:notif-fade 3s forwards; white-space:nowrap; }
+@keyframes notif-fade { 0%{opacity:1;transform:translateY(0)} 70%{opacity:1} 100%{opacity:0;transform:translateY(-20px)} }
+
+/* Controls help */
+#controls-help { position:fixed; bottom:10px; left:10px; z-index:20; display:none;
+  background:rgba(0,0,0,0.8); border:1px solid #1a3a5a; padding:6px 10px; border-radius:4px; font-size:10px; color:#6a8aaa; }
+</style>
+</head>
+<body>
+
+<canvas id="game"></canvas>
+
+<!-- Entry Screen -->
+<div id="entry-screen">
+  <h1>⚓ The Citadel</h1>
+  <div class="subtitle">Homeworld • Asteroid City Server</div>
+  <div class="cost">Entry Fee: 1 Chip ($20)</div>
+  <p style="color:#666;font-size:12px;max-width:400px;text-align:center;margin-bottom:20px;">
+    Warning: Death in the Badlands means losing ALL inventory including your Chip. The Citadel is a high-risk persistent world.
+  </p>
+  <button onclick="enterCitadel()">Enter The Citadel</button>
+  <button class="back-btn" onclick="window.location.href='/fleet-battle.html'">← Back to Fleet Battle</button>
+</div>
+
+<!-- HUD -->
+<div id="hud">
+  <div class="stat"><span class="label">Credits:</span> <span class="value" id="hud-credits">100</span></div>
+  <div class="stat"><span class="label">Chips:</span> <span class="value" id="hud-chips">0</span></div>
+  <div class="stat"><span class="label">HP:</span> <span class="value" id="hud-hp">100/100</span></div>
+  <div class="stat"><span class="label">Job:</span> <span class="value" id="hud-job">None</span></div>
+  <div class="stat"><span class="label">Floppy ID:</span> <span class="value" id="hud-floppy">❌</span></div>
+</div>
+
+<div id="district-bar"></div>
+<canvas id="minimap"></canvas>
+<div id="inventory-panel"><h3>📦 Inventory</h3><div id="inv-list"></div></div>
+<div id="notifications"></div>
+<div id="action-prompt"></div>
+<div id="controls-help">WASD: Move | E: Interact | I: Inventory | TAB: Map | ESC: Close</div>
+
+<!-- Shop Modal -->
+<div id="shop-modal">
+  <button id="shop-close" onclick="closeShop()">✕</button>
+  <h2 id="shop-title">Shop</h2>
+  <div id="shop-items"></div>
+</div>
+
+<!-- Job Panel -->
+<div id="job-panel">
+  <button id="job-close" onclick="closeJob()">✕</button>
+  <h2>📋 Job Board</h2>
+  <div id="job-list"></div>
+</div>
+
+<!-- Race Panel -->
+<div id="race-panel">
+  <button id="race-close" onclick="closeRace()">✕</button>
+  <h2>🏁 Racing Arena</h2>
+  <div id="race-content"></div>
+</div>
+
+<!-- Death Screen -->
+<div id="death-screen">
+  <h1>💀 Destroyed</h1>
+  <p id="death-msg">You were eliminated in the Badlands. All inventory lost.</p>
+  <button onclick="respawn()">Re-Enter (1 Chip - $20)</button>
+  <button style="background:#333;border-color:#555;margin-top:10px;" onclick="window.location.href='/fleet-battle.html'">← Exit to Fleet Battle</button>
+</div>
+
+<script>
+// ==================== CITADEL GAME ENGINE ====================
+const canvas = document.getElementById('game');
+const ctx = canvas.getContext('2d');
+const minimapCanvas = document.getElementById('minimap');
+const minimapCtx = minimapCanvas.getContext('2d');
+
+canvas.width = window.innerWidth;
+canvas.height = window.innerHeight;
+minimapCanvas.width = 180;
+minimapCanvas.height = 180;
+
+window.addEventListener('resize', () => { canvas.width = window.innerWidth; canvas.height = window.innerHeight; });
+
+// ==================== WORLD CONSTANTS ====================
+const WORLD_W = 6000;
+const WORLD_H = 6000;
+const TILE = 40;
+
+// Districts with bounds
+const DISTRICTS = {
+  hq: { name:'HQ District', x:2600, y:2600, w:800, h:800, safe:true, color:'#1a3a2a', border:'#2a8a4a' },
+  market: { name:'Market District', x:1800, y:2400, w:700, h:600, safe:true, color:'#2a2a1a', border:'#8a7a2a' },
+  factory: { name:'Factory District', x:3500, y:2400, w:700, h:600, safe:true, color:'#2a1a1a', border:'#6a4a2a' },
+  dockyard: { name:'Dockyard', x:2600, y:1600, w:800, h:600, safe:true, color:'#1a1a2a', border:'#2a4a8a' },
+  racing: { name:'Racing Arena', x:2600, y:3600, w:800, h:600, safe:true, color:'#2a1a2a', border:'#8a2a6a' },
+  badlands_n: { name:'Badlands North', x:500, y:500, w:2000, h:1000, safe:false, color:'#1a0a0a', border:'#5a1a1a' },
+  badlands_s: { name:'Badlands South', x:500, y:4500, w:5000, h:1500, safe:false, color:'#1a0a0a', border:'#5a1a1a' },
+  badlands_w: { name:'Badlands West', x:200, y:500, w:1200, h:5000, safe:false, color:'#1a0a0a', border:'#5a1a1a' },
+  badlands_e: { name:'Badlands East', x:4500, y:500, w:1300, h:5000, safe:false, color:'#1a0a0a', border:'#5a1a1a' },
+};
+
+// Interactable locations
+const LOCATIONS = [
+  // HQ
+  { x:2900, y:2900, w:120, h:80, type:'spawn', name:'Command Center', district:'hq' },
+  { x:3100, y:3000, w:80, h:60, type:'id_office', name:'ID Registry Office', district:'hq' },
+  // Market
+  { x:1900, y:2500, w:100, h:70, type:'shop', name:'Fuel Station Alpha', shop:'fuel', district:'market' },
+  { x:2100, y:2500, w:100, h:70, type:'shop', name:'Titan Equipment', shop:'equipment', district:'market' },
+  { x:1900, y:2700, w:100, h:70, type:'shop', name:'Speed Demons Racing', shop:'racing', district:'market' },
+  { x:2100, y:2700, w:100, h:70, type:'shop', name:'Mess Hall', shop:'food', district:'market' },
+  { x:2300, y:2600, w:80, h:60, type:'shop', name:'Resource Trader', shop:'resource', district:'market' },
+  // Factory
+  { x:3600, y:2500, w:120, h:80, type:'job_board', name:'Job Board', district:'factory' },
+  { x:3800, y:2600, w:100, h:70, type:'factory', name:'Floppy Disk Factory', district:'factory' },
+  { x:3600, y:2700, w:100, h:70, type:'factory', name:'Fuel Refinery', district:'factory' },
+  // Dockyard
+  { x:2700, y:1700, w:120, h:80, type:'dock', name:'Ship Hangar', district:'dockyard' },
+  { x:2950, y:1800, w:100, h:70, type:'job_board', name:'Dockyard Jobs', district:'dockyard' },
+  // Racing
+  { x:2900, y:3700, w:120, h:80, type:'race', name:'Race Terminal', district:'racing' },
+  // Badlands mining nodes
+  { x:800, y:700, w:60, h:60, type:'mine', name:'Fuel Ore Deposit', resource:'Fuel Ore' },
+  { x:1200, y:800, w:60, h:60, type:'mine', name:'Alloy Vein', resource:'Alloy Fragments' },
+  { x:1600, y:600, w:60, h:60, type:'mine', name:'Crystal Cluster', resource:'Energy Crystals' },
+  { x:1000, y:900, w:60, h:60, type:'mine', name:'Chemical Pool', resource:'Chemical Components' },
+  { x:5200, y:1000, w:60, h:60, type:'mine', name:'Fuel Ore Deposit', resource:'Fuel Ore' },
+  { x:5000, y:1500, w:60, h:60, type:'mine', name:'Alloy Vein', resource:'Alloy Fragments' },
+  { x:800, y:4800, w:60, h:60, type:'mine', name:'Crystal Cluster', resource:'Energy Crystals' },
+  { x:1500, y:5000, w:60, h:60, type:'mine', name:'Chemical Pool', resource:'Chemical Components' },
+  { x:5200, y:4800, w:60, h:60, type:'mine', name:'Fuel Ore Deposit', resource:'Fuel Ore' },
+  { x:4800, y:5200, w:60, h:60, type:'mine', name:'Alloy Vein', resource:'Alloy Fragments' },
+];
+
+// NPC shop inventories
+const SHOP_STOCK = {
+  fuel: [
+    { name:'Standard Fuel Cell', price:10, desc:'Basic thruster fuel' },
+    { name:'Premium Fuel Cell', price:25, desc:'High-performance fuel' },
+  ],
+  equipment: [
+    { name:'Hull Plating Mk1', price:30, desc:'+10% HP' },
+    { name:'Thruster Booster', price:45, desc:'+15% speed' },
+    { name:'Shield Generator', price:60, desc:'Frontal shield' },
+  ],
+  racing: [
+    { name:'Nitro Boost Pack', price:20, desc:'Race speed boost' },
+    { name:'Drift Stabilizer', price:35, desc:'Better cornering' },
+  ],
+  food: [
+    { name:'Ration Pack', price:5, desc:'Restore 20 HP' },
+    { name:'Combat Stim', price:15, desc:'Temp damage boost' },
+  ],
+  resource: [] // dynamic - buys player resources
+};
+
+const JOBS = [
+  { name:'Floppy Disk Factory Worker', pay:8, interval:5000, desc:'Manufacture Floppy Disk IDs' },
+  { name:'Fuel Refinery Worker', pay:10, interval:6000, desc:'Refine raw fuel ore into fuel cells' },
+  { name:'Mining Contractor', pay:12, interval:7000, desc:'Coordinate mining operations' },
+  { name:'Market Vendor', pay:6, interval:4000, desc:'Sell goods at the market' },
+  { name:'Dockyard Mechanic', pay:9, interval:5000, desc:'Repair and upgrade ships' },
+];
+
+// ==================== GAME STATE ====================
+let gameActive = false;
+let player = null;
+let otherPlayers = [];
+let enemies = [];
+let particles = [];
+let camera = { x:0, y:0 };
+let keys = {};
+let frameCount = 0;
+let currentDistrict = null;
+let nearbyLocation = null;
+let shopOpen = false;
+let jobOpen = false;
+let raceOpen = false;
+let miningProgress = 0;
+let isMining = false;
+let jobTimer = null;
+let raceActive = false;
+let raceData = null;
+let stars = [];
+
+// Generate stars for background
+for (let i = 0; i < 400; i++) {
+  stars.push({ x: Math.random()*WORLD_W, y: Math.random()*WORLD_H, s: Math.random()*2+0.5, b: Math.random() });
+}
+
+// ==================== PLAYER CLASS ====================
+class Player {
+  constructor(x, y) {
+    this.x = x; this.y = y;
+    this.w = 28; this.h = 28;
+    this.speed = 3;
+    this.hp = 100; this.maxHp = 100;
+    this.credits = 100;
+    this.chips = 1;
+    this.hasFloppyId = false;
+    this.inventory = [];
+    this.job = null;
+    this.angle = 0;
+    this.attacking = false;
+    this.attackCooldown = 0;
+    this.damage = 15;
+    this.invulnFrames = 0;
+    this.dead = false;
+  }
+
+  update() {
+    if (this.dead) return;
+    let dx = 0, dy = 0;
+    if (keys['w'] || keys['arrowup']) dy = -1;
+    if (keys['s'] || keys['arrowdown']) dy = 1;
+    if (keys['a'] || keys['arrowleft']) dx = -1;
+    if (keys['d'] || keys['arrowright']) dx = 1;
+    if (dx && dy) { dx *= 0.707; dy *= 0.707; }
+
+    let nx = this.x + dx * this.speed;
+    let ny = this.y + dy * this.speed;
+
+    // World bounds
+    nx = Math.max(20, Math.min(WORLD_W - 20, nx));
+    ny = Math.max(20, Math.min(WORLD_H - 20, ny));
+
+    // Check building collision
+    let blocked = false;
+    for (let loc of LOCATIONS) {
+      if (loc.type === 'mine') continue;
+      if (nx < loc.x + loc.w && nx + this.w > loc.x && ny < loc.y + loc.h && ny + this.h > loc.y) {
+        blocked = true; break;
+      }
+    }
+    if (!blocked) { this.x = nx; this.y = ny; }
+
+    if (dx || dy) this.angle = Math.atan2(dy, dx);
+    if (this.attackCooldown > 0) this.attackCooldown--;
+    if (this.invulnFrames > 0) this.invulnFrames--;
+
+    // Mining
+    if (isMining && nearbyLocation && nearbyLocation.type === 'mine') {
+      miningProgress += 0.5;
+      if (miningProgress >= 100) {
+        miningProgress = 0;
+        isMining = false;
+        addInventory('resource', nearbyLocation.resource, 1);
+        notify(`⛏ Mined 1x ${nearbyLocation.resource}`);
+      }
+    }
+  }
+
+  attack() {
+    if (this.attackCooldown > 0 || this.dead) return;
+    this.attacking = true;
+    this.attackCooldown = 30;
+
+    // Check if in safe zone
+    if (currentDistrict && DISTRICTS[currentDistrict] && DISTRICTS[currentDistrict].safe) return;
+
+    // Attack enemies
+    let attackRange = 60;
+    let attackAngle = this.angle;
+    for (let e of enemies) {
+      let dx = e.x - this.x, dy = e.y - this.y;
+      let dist = Math.sqrt(dx*dx+dy*dy);
+      let ang = Math.atan2(dy, dx);
+      let angleDiff = Math.abs(((ang - attackAngle + Math.PI*3) % (Math.PI*2)) - Math.PI);
+      if (dist < attackRange && angleDiff < 1) {
+        e.takeDamage(this.damage, this);
+        spawnParticles(e.x, e.y, '#ff4444', 5);
+      }
+    }
+
+    setTimeout(() => { this.attacking = false; }, 200);
+  }
+
+  takeDamage(amount, attacker) {
+    if (this.invulnFrames > 0 || this.dead) return;
+    // Check safe zone
+    if (currentDistrict && DISTRICTS[currentDistrict] && DISTRICTS[currentDistrict].safe) return;
+
+    this.hp -= amount;
+    this.invulnFrames = 20;
+    spawnParticles(this.x, this.y, '#ff6666', 8);
+
+    if (this.hp <= 0) {
+      this.die(attacker);
+    }
+  }
+
+  die(killer) {
+    this.dead = true;
+    // Drop all loot
+    if (killer) {
+      notify(`💀 Destroyed by hostile! Lost all inventory and ${this.chips} Chip(s).`);
+    }
+    this.inventory = [];
+    this.chips = 0;
+    this.hasFloppyId = false;
+    document.getElementById('death-screen').style.display = 'flex';
+    updateHUD();
+  }
+
+  draw() {
+    if (this.dead) return;
+    let sx = this.x - camera.x, sy = this.y - camera.y;
+
+    // Invuln flash
+    if (this.invulnFrames > 0 && frameCount % 4 < 2) return;
+
+    // Ship body
+    ctx.save();
+    ctx.translate(sx, sy);
+    ctx.rotate(this.angle);
+
+    // Main hull
+    ctx.fillStyle = '#3a8adf';
+    ctx.beginPath();
+    ctx.moveTo(16, 0);
+    ctx.lineTo(-10, -10);
+    ctx.lineTo(-6, 0);
+    ctx.lineTo(-10, 10);
+    ctx.closePath();
+    ctx.fill();
+
+    // Engine glow
+    ctx.fillStyle = '#44aaff';
+    ctx.fillRect(-12, -4, 6, 8);
+
+    // Attack animation
+    if (this.attacking) {
+      ctx.strokeStyle = '#ffaa44';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(16, 0);
+      ctx.lineTo(40, 0);
+      ctx.stroke();
+    }
+
+    ctx.restore();
+
+    // HP bar
+    if (this.hp < this.maxHp) {
+      let bw = 30, bh = 3;
+      ctx.fillStyle = '#333';
+      ctx.fillRect(sx - bw/2, sy - 22, bw, bh);
+      ctx.fillStyle = this.hp > 50 ? '#4ade80' : this.hp > 25 ? '#fbbf24' : '#f87171';
+      ctx.fillRect(sx - bw/2, sy - 22, bw * (this.hp/this.maxHp), bh);
+    }
+
+    // Name tag
+    ctx.fillStyle = '#8ac4ff';
+    ctx.font = '10px Courier New';
+    ctx.textAlign = 'center';
+    ctx.fillText('You', sx, sy - 26);
+  }
+}
+
+// ==================== ENEMY CLASS ====================
+class Enemy {
+  constructor(x, y, type) {
+    this.x = x; this.y = y;
+    this.type = type || 'raider';
+    this.w = 24; this.h = 24;
+    this.speed = 1.5 + Math.random();
+    this.hp = 80; this.maxHp = 80;
+    this.damage = 8 + Math.random()*5;
+    this.angle = Math.random() * Math.PI * 2;
+    this.attackCooldown = 0;
+    this.patrolTarget = { x: x + (Math.random()-0.5)*400, y: y + (Math.random()-0.5)*400 };
+    this.state = 'patrol'; // patrol, chase, attack
+    this.aggroRange = 250;
+    this.spawnX = x; this.spawnY = y;
+    this.dead = false;
+    this.loot = [];
+    // Give some loot
+    let resources = ['Fuel Ore','Alloy Fragments','Energy Crystals','Chemical Components'];
+    for (let i = 0; i < 1+Math.floor(Math.random()*3); i++) {
+      this.loot.push({ type:'resource', name:resources[Math.floor(Math.random()*resources.length)], qty:1+Math.floor(Math.random()*2) });
+    }
+  }
+
+  update() {
+    if (this.dead) return;
+    if (!player || player.dead) { this.state = 'patrol'; }
+
+    let dx = player.x - this.x, dy = player.y - this.y;
+    let dist = Math.sqrt(dx*dx+dy*dy);
+
+    // Don't chase into safe zones
+    let inSafe = false;
+    for (let k in DISTRICTS) {
+      let d = DISTRICTS[k];
+      if (d.safe && this.x >= d.x && this.x <= d.x+d.w && this.y >= d.y && this.y <= d.y+d.h) {
+        inSafe = true; break;
+      }
+    }
+
+    if (dist < this.aggroRange && !inSafe) {
+      // Check if player is in safe zone
+      let playerSafe = currentDistrict && DISTRICTS[currentDistrict] && DISTRICTS[currentDistrict].safe;
+      if (!playerSafe) {
+        this.state = dist < 50 ? 'attack' : 'chase';
+      } else {
+        this.state = 'patrol';
+      }
+    } else {
+      this.state = 'patrol';
+    }
+
+    if (this.state === 'chase') {
+      this.angle = Math.atan2(dy, dx);
+      this.x += Math.cos(this.angle) * this.speed;
+      this.y += Math.sin(this.angle) * this.speed;
+    } else if (this.state === 'attack') {
+      this.angle = Math.atan2(dy, dx);
+      if (this.attackCooldown <= 0) {
+        player.takeDamage(this.damage);
+        this.attackCooldown = 45;
+        spawnParticles(player.x, player.y, '#ff4444', 3);
+      }
+    } else {
+      // Patrol
+      let pdx = this.patrolTarget.x - this.x, pdy = this.patrolTarget.y - this.y;
+      let pdist = Math.sqrt(pdx*pdx+pdy*pdy);
+      if (pdist < 20) {
+        this.patrolTarget = {
+          x: this.spawnX + (Math.random()-0.5)*400,
+          y: this.spawnY + (Math.random()-0.5)*400
+        };
+      }
+      this.angle = Math.atan2(pdy, pdx);
+      this.x += Math.cos(this.angle) * this.speed * 0.5;
+      this.y += Math.sin(this.angle) * this.speed * 0.5;
+    }
+
+    if (this.attackCooldown > 0) this.attackCooldown--;
+  }
+
+  takeDamage(amount, attacker) {
+    this.hp -= amount;
+    if (this.hp <= 0) {
+      this.dead = true;
+      // Drop loot
+      for (let l of this.loot) {
+        addInventory(l.type, l.name, l.qty);
+        notify(`🎁 Looted ${l.qty}x ${l.name}`);
+      }
+      spawnParticles(this.x, this.y, '#ff8800', 15);
+      // Respawn after delay
+      setTimeout(() => {
+        this.hp = this.maxHp;
+        this.x = this.spawnX + (Math.random()-0.5)*200;
+        this.y = this.spawnY + (Math.random()-0.5)*200;
+        this.dead = false;
+        this.loot = [];
+        let resources = ['Fuel Ore','Alloy Fragments','Energy Crystals','Chemical Components'];
+        for (let i = 0; i < 1+Math.floor(Math.random()*3); i++) {
+          this.loot.push({ type:'resource', name:resources[Math.floor(Math.random()*resources.length)], qty:1+Math.floor(Math.random()*2) });
+        }
+      }, 15000);
+    }
+  }
+
+  draw() {
+    if (this.dead) return;
+    let sx = this.x - camera.x, sy = this.y - camera.y;
+    if (sx < -50 || sx > canvas.width+50 || sy < -50 || sy > canvas.height+50) return;
+
+    ctx.save();
+    ctx.translate(sx, sy);
+    ctx.rotate(this.angle);
+
+    // Red enemy ship
+    ctx.fillStyle = this.state === 'attack' ? '#ff3333' : '#aa2222';
+    ctx.beginPath();
+    ctx.moveTo(14, 0);
+    ctx.lineTo(-8, -8);
+    ctx.lineTo(-4, 0);
+    ctx.lineTo(-8, 8);
+    ctx.closePath();
+    ctx.fill();
+
+    ctx.fillStyle = '#ff4444';
+    ctx.fillRect(-10, -3, 5, 6);
+
+    ctx.restore();
+
+    // HP bar
+    let bw = 24, bh = 2;
+    ctx.fillStyle = '#333';
+    ctx.fillRect(sx - bw/2, sy - 18, bw, bh);
+    ctx.fillStyle = '#f87171';
+    ctx.fillRect(sx - bw/2, sy - 18, bw * (this.hp/this.maxHp), bh);
+
+    // Label
+    ctx.fillStyle = '#ff6666';
+    ctx.font = '9px Courier New';
+    ctx.textAlign = 'center';
+    ctx.fillText('Raider', sx, sy - 22);
+  }
+}
+
+// ==================== OTHER PLAYERS (simulated for now) ====================
+class SimPlayer {
+  constructor(x, y, name) {
+    this.x = x; this.y = y;
+    this.name = name;
+    this.angle = Math.random()*Math.PI*2;
+    this.speed = 1+Math.random()*2;
+    this.target = { x: x+(Math.random()-0.5)*600, y: y+(Math.random()-0.5)*600 };
+    this.hp = 100; this.maxHp = 100;
+  }
+  update() {
+    let dx = this.target.x-this.x, dy = this.target.y-this.y;
+    let d = Math.sqrt(dx*dx+dy*dy);
+    if (d < 30) {
+      this.target = { x: this.x+(Math.random()-0.5)*600, y: this.y+(Math.random()-0.5)*600 };
+      this.target.x = Math.max(100,Math.min(WORLD_W-100,this.target.x));
+      this.target.y = Math.max(100,Math.min(WORLD_H-100,this.target.y));
+    }
+    this.angle = Math.atan2(dy,dx);
+    this.x += Math.cos(this.angle)*this.speed*0.3;
+    this.y += Math.sin(this.angle)*this.speed*0.3;
+  }
+  draw() {
+    let sx = this.x-camera.x, sy = this.y-camera.y;
+    if (sx<-50||sx>canvas.width+50||sy<-50||sy>canvas.height+50) return;
+    ctx.save(); ctx.translate(sx,sy); ctx.rotate(this.angle);
+    ctx.fillStyle = '#44aa66';
+    ctx.beginPath(); ctx.moveTo(14,0); ctx.lineTo(-8,-8); ctx.lineTo(-4,0); ctx.lineTo(-8,8); ctx.closePath(); ctx.fill();
+    ctx.restore();
+    ctx.fillStyle = '#66cc88'; ctx.font='9px Courier New'; ctx.textAlign='center';
+    ctx.fillText(this.name, sx, sy-18);
+  }
+}
+
+// ==================== PARTICLES ====================
+function spawnParticles(x, y, color, count) {
+  for (let i = 0; i < count; i++) {
+    particles.push({
+      x, y, vx:(Math.random()-0.5)*4, vy:(Math.random()-0.5)*4,
+      life:20+Math.random()*20, maxLife:40, color, size:2+Math.random()*2
+    });
+  }
+}
+
+// ==================== INVENTORY ====================
+function addInventory(type, name, qty) {
+  let existing = player.inventory.find(i => i.name === name);
+  if (existing) existing.qty += qty;
+  else player.inventory.push({ type, name, qty });
+  updateInventoryUI();
+  updateHUD();
+}
+
+function removeInventory(name, qty) {
+  let item = player.inventory.find(i => i.name === name);
+  if (!item || item.qty < qty) return false;
+  item.qty -= qty;
+  if (item.qty <= 0) player.inventory = player.inventory.filter(i => i.name !== name);
+  updateInventoryUI();
+  updateHUD();
+  return true;
+}
+
+function hasItem(name, qty=1) {
+  let item = player.inventory.find(i => i.name === name);
+  return item && item.qty >= qty;
+}
+
+function updateInventoryUI() {
+  let list = document.getElementById('inv-list');
+  if (!player) return;
+  list.innerHTML = '';
+  if (player.inventory.length === 0) {
+    list.innerHTML = '<div style="color:#555;font-size:11px;">Empty</div>';
+    return;
+  }
+  for (let item of player.inventory) {
+    list.innerHTML += `<div class="inv-item"><span class="iname">${item.name}</span><span class="iqty">x${item.qty}</span></div>`;
+  }
+}
+
+// ==================== HUD ====================
+function updateHUD() {
+  if (!player) return;
+  document.getElementById('hud-credits').textContent = player.credits;
+  document.getElementById('hud-chips').textContent = player.chips;
+  document.getElementById('hud-hp').textContent = `${Math.ceil(player.hp)}/${player.maxHp}`;
+  document.getElementById('hud-job').textContent = player.job || 'None';
+  document.getElementById('hud-floppy').textContent = player.hasFloppyId ? '✅' : '❌';
+}
+
+// ==================== NOTIFICATIONS ====================
+function notify(msg) {
+  let container = document.getElementById('notifications');
+  let div = document.createElement('div');
+  div.className = 'notif';
+  div.textContent = msg;
+  container.appendChild(div);
+  setTimeout(() => div.remove(), 3000);
+}
+
+// ==================== SHOP SYSTEM ====================
+function openShop(location) {
+  if (!player.hasFloppyId && location.name !== 'ID Registry Office') {
+    notify('❌ You need a Floppy Disk ID to use shops! Visit the ID Registry Office in HQ.');
+    return;
+  }
+
+  shopOpen = true;
+  let modal = document.getElementById('shop-modal');
+  modal.style.display = 'block';
+  document.getElementById('shop-title').textContent = `🏪 ${location.name}`;
+  let itemsDiv = document.getElementById('shop-items');
+  itemsDiv.innerHTML = '';
+
+  if (location.name === 'ID Registry Office') {
+    itemsDiv.innerHTML = `
+      <div class="shop-item">
+        <div><strong style="color:#fbbf24">Floppy Disk ID</strong><br><span style="color:#888;font-size:10px">Required to interact with the economy</span></div>
+        <div style="text-align:right">
+          <span style="color:#4ade80">5 credits</span><br>
+          <button onclick="buyFloppyId()">Buy</button>
+        </div>
+      </div>`;
+    return;
+  }
+
+  if (location.name === 'Resource Trader') {
+    // Sell resources
+    itemsDiv.innerHTML = '<p style="color:#888;font-size:11px;margin-bottom:8px;">Sell your resources here:</p>';
+    let resources = player.inventory.filter(i => i.type === 'resource');
+    if (resources.length === 0) {
+      itemsDiv.innerHTML += '<p style="color:#555;font-size:11px;">No resources to sell.</p>';
+    }
+    for (let r of resources) {
+      let sellPrice = r.name === 'Energy Crystals' ? 20 : r.name === 'Alloy Fragments' ? 15 : r.name === 'Fuel Ore' ? 12 : 18;
+      itemsDiv.innerHTML += `
+        <div class="shop-item">
+          <div><strong style="color:#8ac4ff">${r.name}</strong> x${r.qty}<br><span style="color:#888;font-size:10px">Sell price: ${sellPrice} credits each</span></div>
+          <button onclick="sellResource('${r.name}',${sellPrice})">Sell 1</button>
+        </div>`;
+    }
+    return;
+  }
+
+  let stock = SHOP_STOCK[location.shop] || [];
+  for (let item of stock) {
+    itemsDiv.innerHTML += `
+      <div class="shop-item">
+        <div><strong style="color:#8ac4ff">${item.name}</strong><br><span style="color:#888;font-size:10px">${item.desc}</span></div>
+        <div style="text-align:right">
+          <span style="color:#4ade80">${item.price} cr</span><br>
+          <button onclick="buyItem('${item.name}',${item.price},'${location.shop}')">Buy</button>
+        </div>
+      </div>`;
+  }
+}
+
+function closeShop() { shopOpen = false; document.getElementById('shop-modal').style.display = 'none'; }
+
+function buyItem(name, price, type) {
+  if (player.credits < price) { notify('❌ Not enough credits!'); return; }
+  player.credits -= price;
+  addInventory(type, name, 1);
+  notify(`✅ Purchased ${name} for ${price} credits`);
+  updateHUD();
+}
+
+function buyFloppyId() {
+  if (player.hasFloppyId) { notify('You already have a Floppy Disk ID!'); return; }
+  if (player.credits < 5) { notify('❌ Not enough credits! Need 5.'); return; }
+  player.credits -= 5;
+  player.hasFloppyId = true;
+  notify('✅ Floppy Disk ID acquired! You can now use shops and services.');
+  updateHUD();
+  closeShop();
+}
+
+function sellResource(name, price) {
+  if (removeInventory(name, 1)) {
+    player.credits += price;
+    notify(`💰 Sold ${name} for ${price} credits`);
+    updateHUD();
+    // Refresh shop
+    let loc = LOCATIONS.find(l => l.name === 'Resource Trader');
+    if (loc) openShop(loc);
+  }
+}
+
+// ==================== JOB SYSTEM ====================
+function openJobBoard() {
+  if (!player.hasFloppyId) { notify('❌ You need a Floppy Disk ID to work jobs!'); return; }
+  jobOpen = true;
+  let panel = document.getElementById('job-panel');
+  panel.style.display = 'block';
+  let list = document.getElementById('job-list');
+  list.innerHTML = '';
+
+  if (player.job) {
+    list.innerHTML = `<p style="color:#4ade80;margin-bottom:10px;">Currently working: <strong>${player.job}</strong></p>
+      <button onclick="quitJob()" style="background:#5a2a2a;border:1px solid #8a3a3a;color:#fff;padding:6px 14px;cursor:pointer;border-radius:3px;">Quit Job</button>`;
+    return;
+  }
+
+  for (let job of JOBS) {
+    list.innerHTML += `
+      <div class="job-item" onclick="takeJob('${job.name}',${job.pay},${job.interval})">
+        <strong style="color:#8ac4ff">${job.name}</strong><br>
+        <span style="color:#888;font-size:10px">${job.desc}</span><br>
+        <span style="color:#4ade80">Pay: ${job.pay} credits / cycle</span>
+      </div>`;
+  }
+}
+
+function closeJob() { jobOpen = false; document.getElementById('job-panel').style.display = 'none'; }
+
+function takeJob(name, pay, interval) {
+  player.job = name;
+  notify(`📋 Started working as: ${name}`);
+  updateHUD();
+  closeJob();
+  // Job pays over time
+  jobTimer = setInterval(() => {
+    if (!player || player.dead || !player.job) { clearInterval(jobTimer); return; }
+    player.credits += pay;
+    player.jobEarnings = (player.jobEarnings || 0) + pay;
+    notify(`💰 Job payment: +${pay} credits`);
+    updateHUD();
+  }, interval);
+}
+
+function quitJob() {
+  if (jobTimer) clearInterval(jobTimer);
+  notify(`📋 Quit job: ${player.job}`);
+  player.job = null;
+  updateHUD();
+  closeJob();
+}
+
+// ==================== RACING ====================
+function openRace() {
+  raceOpen = true;
+  let panel = document.getElementById('race-panel');
+  panel.style.display = 'block';
+  let content = document.getElementById('race-content');
+  content.innerHTML = `
+    <p style="color:#888;font-size:12px;margin-bottom:12px;">Race through the asteroid track! Wager credits for bigger rewards.</p>
+    <div style="margin-bottom:12px;">
+      <label style="color:#fbbf24;font-size:12px;">Wager Amount:</label><br>
+      <input id="race-wager" type="number" value="10" min="0" max="${player.credits}" style="background:#111;border:1px solid #555;color:#fff;padding:4px 8px;width:100px;font-family:inherit;margin-top:4px;">
+      <span style="color:#888;font-size:11px;"> credits</span>
+    </div>
+    <button onclick="startRace()" style="background:#8a6a1a;border:2px solid #d97706;color:#fff;padding:8px 20px;cursor:pointer;border-radius:4px;font-family:inherit;">
+      🏁 Start Race
+    </button>
+    <div style="margin-top:15px;color:#666;font-size:10px;">
+      <p>Win: 2x wager | Lose: lose wager</p>
+      <p>Use arrow keys during race. Avoid obstacles!</p>
+    </div>`;
+}
+
+function closeRace() { raceOpen = false; document.getElementById('race-panel').style.display = 'none'; }
+
+function startRace() {
+  let wager = parseInt(document.getElementById('race-wager').value) || 0;
+  if (wager > player.credits) { notify('❌ Not enough credits!'); return; }
+  player.credits -= wager;
+  updateHUD();
+  closeRace();
+
+  raceActive = true;
+  raceData = {
+    wager,
+    trackX: 2600, trackY: 3800,
+    playerPos: 0,
+    speed: 0,
+    lane: 1, // 0,1,2
+    obstacles: [],
+    distance: 0,
+    maxDist: 2000,
+    timer: 0,
+    boost: 0,
+  };
+
+  // Generate obstacles
+  for (let i = 200; i < 2000; i += 80+Math.random()*60) {
+    raceData.obstacles.push({ dist: i, lane: Math.floor(Math.random()*3), type: Math.random()>0.7?'boost':'rock' });
+  }
+
+  notify('🏁 RACE STARTED! Use ← → to steer, hold ↑ for speed!');
+}
+
+function updateRace() {
+  if (!raceActive || !raceData) return;
+
+  raceData.timer++;
+
+  // Controls
+  if (keys['arrowup'] || keys['w']) raceData.speed = Math.min(raceData.speed + 0.3, 8);
+  else raceData.speed = Math.max(raceData.speed - 0.1, 2);
+
+  if (keys['arrowleft'] || keys['a']) raceData.lane = Math.max(0, raceData.lane - 0.05);
+  if (keys['arrowright'] || keys['d']) raceData.lane = Math.min(2, raceData.lane + 0.05);
+
+  if (raceData.boost > 0) { raceData.speed += 2; raceData.boost--; }
+
+  raceData.distance += raceData.speed;
+
+  // Check obstacles
+  for (let obs of raceData.obstacles) {
+    if (Math.abs(obs.dist - raceData.distance) < 15 && Math.abs(obs.lane - raceData.lane) < 0.6) {
+      if (obs.type === 'boost') {
+        raceData.boost = 30;
+        notify('🚀 BOOST!');
+        obs.dist = -1000;
+      } else {
+        raceData.speed *= 0.3;
+        spawnParticles(canvas.width/2, canvas.height/2, '#ff4444', 10);
+        obs.dist = -1000;
+      }
+    }
+  }
+
+  // Finish
+  if (raceData.distance >= raceData.maxDist) {
+    raceActive = false;
+    let time = (raceData.timer / 60).toFixed(1);
+    let won = raceData.timer < 600; // under 10 seconds = win
+    if (won) {
+      let winnings = raceData.wager * 2;
+      player.credits += winnings;
+      notify(`🏆 RACE WON! Time: ${time}s | Won ${winnings} credits!`);
+    } else {
+      notify(`💨 Race finished. Time: ${time}s | Too slow, lost ${raceData.wager} credits.`);
+    }
+    updateHUD();
+    raceData = null;
+  }
+}
+
+function drawRace() {
+  if (!raceActive || !raceData) return;
+
+  // Draw race overlay
+  ctx.fillStyle = 'rgba(0,0,0,0.8)';
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+  let cx = canvas.width/2, cy = canvas.height/2;
+
+  // Track
+  let trackW = 300, trackH = canvas.height;
+  ctx.fillStyle = '#1a1a2a';
+  ctx.fillRect(cx-trackW/2, 0, trackW, trackH);
+
+  // Lane lines
+  ctx.strokeStyle = '#333';
+  ctx.setLineDash([10,10]);
+  ctx.beginPath();
+  ctx.moveTo(cx-trackW/6, 0); ctx.lineTo(cx-trackW/6, trackH);
+  ctx.moveTo(cx+trackW/6, 0); ctx.lineTo(cx+trackW/6, trackH);
+  ctx.stroke();
+  ctx.setLineDash([]);
+
+  // Obstacles
+  for (let obs of raceData.obstacles) {
+    let relDist = obs.dist - raceData.distance;
+    if (relDist < -50 || relDist > 500) continue;
+    let oy = cy - relDist * 1.2;
+    let ox = cx + (obs.lane - 1) * (trackW/3);
+    if (obs.type === 'boost') {
+      ctx.fillStyle = '#4ade80';
+      ctx.fillRect(ox-12, oy-12, 24, 24);
+      ctx.fillStyle = '#fff'; ctx.font='14px Courier New'; ctx.textAlign='center';
+      ctx.fillText('⚡', ox, oy+5);
+    } else {
+      ctx.fillStyle = '#8a4a2a';
+      ctx.beginPath(); ctx.arc(ox, oy, 15, 0, Math.PI*2); ctx.fill();
+      ctx.fillStyle = '#555'; ctx.font='10px Courier New'; ctx.textAlign='center';
+      ctx.fillText('☄', ox, oy+4);
+    }
+  }
+
+  // Player ship in race
+  let px = cx + (raceData.lane - 1) * (trackW/3);
+  let py = cy + 150;
+  ctx.fillStyle = '#3a8adf';
+  ctx.beginPath(); ctx.moveTo(px, py-16); ctx.lineTo(px-10, py+8); ctx.lineTo(px+10, py+8); ctx.closePath(); ctx.fill();
+  ctx.fillStyle = '#44aaff'; ctx.fillRect(px-4, py+8, 8, 6);
+
+  // HUD
+  ctx.fillStyle = '#fbbf24'; ctx.font = '16px Courier New'; ctx.textAlign = 'left';
+  ctx.fillText(`Distance: ${Math.floor(raceData.distance)}/${raceData.maxDist}`, 20, 30);
+  ctx.fillText(`Speed: ${raceData.speed.toFixed(1)}`, 20, 50);
+  ctx.fillText(`Time: ${(raceData.timer/60).toFixed(1)}s`, 20, 70);
+  ctx.fillStyle = '#4ade80';
+  ctx.fillRect(20, 80, (raceData.distance/raceData.maxDist)*200, 8);
+  ctx.strokeStyle = '#333'; ctx.strokeRect(20, 80, 200, 8);
+}
+
+// ==================== WORLD RENDERING ====================
+function drawWorld() {
+  // Space background
+  ctx.fillStyle = '#070710';
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+  // Stars
+  for (let s of stars) {
+    let sx = s.x - camera.x, sy = s.y - camera.y;
+    // Parallax
+    sx = ((s.x * 0.3) - camera.x * 0.3) % canvas.width;
+    sy = ((s.y * 0.3) - camera.y * 0.3) % canvas.height;
+    if (sx < 0) sx += canvas.width;
+    if (sy < 0) sy += canvas.height;
+    let bright = 0.3 + Math.sin(frameCount * 0.02 + s.b * 10) * 0.2;
+    ctx.fillStyle = `rgba(200,220,255,${bright})`;
+    ctx.fillRect(sx, sy, s.s, s.s);
+  }
+
+  // Draw districts
+  for (let k in DISTRICTS) {
+    let d = DISTRICTS[k];
+    let sx = d.x - camera.x, sy = d.y - camera.y;
+    if (sx+d.w < 0 || sx > canvas.width || sy+d.h < 0 || sy > canvas.height) continue;
+
+    ctx.fillStyle = d.color;
+    ctx.fillRect(sx, sy, d.w, d.h);
+    ctx.strokeStyle = d.border;
+    ctx.lineWidth = 2;
+    ctx.strokeRect(sx, sy, d.w, d.h);
+
+    // District name
+    ctx.fillStyle = d.border;
+    ctx.font = '14px Courier New';
+    ctx.textAlign = 'center';
+    ctx.fillText(d.name, sx + d.w/2, sy + 20);
+
+    // Safe/danger indicator
+    if (d.safe) {
+      ctx.fillStyle = 'rgba(42,138,74,0.15)';
+      ctx.fillRect(sx, sy, d.w, d.h);
+    } else {
+      // Danger zone ambient
+      ctx.fillStyle = `rgba(90,26,26,${0.05 + Math.sin(frameCount*0.01)*0.03})`;
+      ctx.fillRect(sx, sy, d.w, d.h);
+    }
+  }
+
+  // Draw asteroid textures in badlands
+  for (let i = 0; i < 50; i++) {
+    let ax = (i * 317 + 100) % WORLD_W;
+    let ay = (i * 491 + 200) % WORLD_H;
+    let sx = ax - camera.x, sy = ay - camera.y;
+    if (sx < -30 || sx > canvas.width+30 || sy < -30 || sy > canvas.height+30) continue;
+
+    // Only in badlands
+    let inBadlands = false;
+    for (let k in DISTRICTS) {
+      let d = DISTRICTS[k];
+      if (!d.safe && ax >= d.x && ax <= d.x+d.w && ay >= d.y && ay <= d.y+d.h) { inBadlands = true; break; }
+    }
+    if (!inBadlands) continue;
+
+    let r = 8 + (i % 15);
+    ctx.fillStyle = `rgba(60,40,30,${0.4+Math.sin(i)*0.2})`;
+    ctx.beginPath(); ctx.arc(sx, sy, r, 0, Math.PI*2); ctx.fill();
+    ctx.fillStyle = 'rgba(80,60,40,0.3)';
+    ctx.beginPath(); ctx.arc(sx-2, sy-2, r*0.6, 0, Math.PI*2); ctx.fill();
+  }
+
+  // Draw locations/buildings
+  for (let loc of LOCATIONS) {
+    let sx = loc.x - camera.x, sy = loc.y - camera.y;
+    if (sx+loc.w < -10 || sx > canvas.width+10 || sy+loc.h < -10 || sy > canvas.height+10) continue;
+
+    if (loc.type === 'mine') {
+      // Mining node
+      let glow = Math.sin(frameCount * 0.05 + loc.x) * 0.3 + 0.7;
+      let color = loc.resource === 'Fuel Ore' ? `rgba(255,150,50,${glow*0.5})` :
+                  loc.resource === 'Alloy Fragments' ? `rgba(150,150,200,${glow*0.5})` :
+                  loc.resource === 'Energy Crystals' ? `rgba(100,200,255,${glow*0.5})` :
+                  `rgba(100,255,100,${glow*0.5})`;
+      ctx.fillStyle = color;
+      ctx.beginPath(); ctx.arc(sx+30, sy+30, 25+Math.sin(frameCount*0.03)*3, 0, Math.PI*2); ctx.fill();
+      ctx.fillStyle = '#aaa';
+      ctx.font = '9px Courier New'; ctx.textAlign = 'center';
+      ctx.fillText(loc.resource, sx+30, sy-5);
+    } else {
+      // Building
+      let bColor = loc.type === 'shop' ? '#2a3a2a' :
+                   loc.type === 'job_board' ? '#2a2a3a' :
+                   loc.type === 'factory' ? '#3a2a1a' :
+                   loc.type === 'dock' ? '#1a2a3a' :
+                   loc.type === 'race' ? '#3a2a3a' :
+                   loc.type === 'id_office' ? '#2a3a3a' :
+                   '#2a2a2a';
+      ctx.fillStyle = bColor;
+      ctx.fillRect(sx, sy, loc.w, loc.h);
+      ctx.strokeStyle = '#4a5a6a';
+      ctx.lineWidth = 1;
+      ctx.strokeRect(sx, sy, loc.w, loc.h);
+
+      // Icon
+      let icon = loc.type === 'shop' ? '🏪' :
+                 loc.type === 'job_board' ? '📋' :
+                 loc.type === 'factory' ? '🏭' :
+                 loc.type === 'dock' ? '🚢' :
+                 loc.type === 'race' ? '🏁' :
+                 loc.type === 'id_office' ? '💾' :
+                 loc.type === 'spawn' ? '🏛' : '🏠';
+
+      ctx.font = '18px serif'; ctx.textAlign = 'center';
+      ctx.fillText(icon, sx+loc.w/2, sy+loc.h/2+6);
+      ctx.fillStyle = '#8a9aaa'; ctx.font = '9px Courier New';
+      ctx.fillText(loc.name, sx+loc.w/2, sy-4);
+    }
+  }
+}
+
+function drawMinimap() {
+  if (!gameActive || !player) return;
+  let mc = minimapCtx;
+  let mw = 180, mh = 180;
+  let scale = mw / WORLD_W;
+
+  mc.fillStyle = '#0a0a12';
+  mc.fillRect(0, 0, mw, mh);
+
+  // Districts
+  for (let k in DISTRICTS) {
+    let d = DISTRICTS[k];
+    mc.fillStyle = d.safe ? 'rgba(42,138,74,0.3)' : 'rgba(138,42,42,0.3)';
+    mc.fillRect(d.x*scale, d.y*scale, d.w*scale, d.h*scale);
+    mc.strokeStyle = d.border;
+    mc.lineWidth = 0.5;
+    mc.strokeRect(d.x*scale, d.y*scale, d.w*scale, d.h*scale);
+  }
+
+  // Player
+  mc.fillStyle = '#3a8adf';
+  mc.fillRect(player.x*scale-2, player.y*scale-2, 4, 4);
+
+  // Enemies
+  for (let e of enemies) {
+    if (e.dead) continue;
+    mc.fillStyle = '#ff4444';
+    mc.fillRect(e.x*scale-1, e.y*scale-1, 2, 2);
+  }
+
+  // Other players
+  for (let p of otherPlayers) {
+    mc.fillStyle = '#44aa66';
+    mc.fillRect(p.x*scale-1, p.y*scale-1, 2, 2);
+  }
+
+  // Camera view
+  mc.strokeStyle = 'rgba(255,255,255,0.3)';
+  mc.strokeRect(camera.x*scale, camera.y*scale, canvas.width*scale, canvas.height*scale);
+}
+
+// ==================== GAME LOGIC ====================
+function checkDistrict() {
+  currentDistrict = null;
+  for (let k in DISTRICTS) {
+    let d = DISTRICTS[k];
+    if (player.x >= d.x && player.x <= d.x+d.w && player.y >= d.y && player.y <= d.y+d.h) {
+      currentDistrict = k;
+      break;
+    }
+  }
+
+  let bar = document.getElementById('district-bar');
+  if (currentDistrict) {
+    let d = DISTRICTS[currentDistrict];
+    bar.style.display = 'block';
+    bar.textContent = d.name + (d.safe ? ' [SAFE ZONE]' : ' ⚠ DANGER ZONE');
+    bar.className = d.safe ? 'safe' : 'danger';
+  } else {
+    bar.style.display = 'block';
+    bar.textContent = 'THE VOID ⚠ EXTREME DANGER';
+    bar.className = 'danger';
+  }
+}
+
+function checkNearbyLocations() {
+  nearbyLocation = null;
+  let prompt = document.getElementById('action-prompt');
+
+  for (let loc of LOCATIONS) {
+    let dx = (loc.x + loc.w/2) - player.x;
+    let dy = (loc.y + loc.h/2) - player.y;
+    let dist = Math.sqrt(dx*dx+dy*dy);
+    let range = loc.type === 'mine' ? 50 : 70;
+
+    if (dist < range) {
+      nearbyLocation = loc;
+      break;
+    }
+  }
+
+  if (nearbyLocation) {
+    prompt.style.display = 'block';
+    if (nearbyLocation.type === 'mine') {
+      if (isMining) {
+        prompt.textContent = `⛏ Mining ${nearbyLocation.resource}... ${Math.floor(miningProgress)}%`;
+      } else {
+        prompt.textContent = `Press E to mine ${nearbyLocation.resource}`;
+      }
+    } else if (nearbyLocation.type === 'shop' || nearbyLocation.type === 'id_office') {
+      prompt.textContent = `Press E to enter ${nearbyLocation.name}`;
+    } else if (nearbyLocation.type === 'job_board') {
+      prompt.textContent = `Press E to view Job Board`;
+    } else if (nearbyLocation.type === 'race') {
+      prompt.textContent = `Press E to enter Racing Arena`;
+    } else {
+      prompt.textContent = `${nearbyLocation.name}`;
+    }
+  } else {
+    prompt.style.display = 'none';
+    if (isMining) { isMining = false; miningProgress = 0; }
+  }
+
+  // Mining progress bar
+  if (isMining && nearbyLocation && nearbyLocation.type === 'mine') {
+    let barW = 60, barH = 6;
+    let sx = nearbyLocation.x + nearbyLocation.w/2 - camera.x;
+    let sy = nearbyLocation.y + nearbyLocation.h + 10 - camera.y;
+    ctx.fillStyle = '#333';
+    ctx.fillRect(sx - barW/2, sy, barW, barH);
+    ctx.fillStyle = '#4ade80';
+    ctx.fillRect(sx - barW/2, sy, barW * (miningProgress/100), barH);
+  }
+}
+
+function interact() {
+  if (!nearbyLocation) return;
+
+  if (nearbyLocation.type === 'mine') {
+    if (!isMining) {
+      isMining = true;
+      miningProgress = 0;
+      notify(`⛏ Started mining ${nearbyLocation.resource}...`);
+    }
+  } else if (nearbyLocation.type === 'shop' || nearbyLocation.type === 'id_office') {
+    openShop(nearbyLocation);
+  } else if (nearbyLocation.type === 'job_board') {
+    openJobBoard();
+  } else if (nearbyLocation.type === 'race') {
+    openRace();
+  }
+}
+
+// ==================== SPAWN ENEMIES ====================
+function spawnEnemies() {
+  // Spawn raiders in badlands
+  let spawnPoints = [
+    { x:800, y:750 }, { x:1300, y:850 }, { x:1600, y:650 },
+    { x:5100, y:1100 }, { x:5000, y:1600 },
+    { x:900, y:4900 }, { x:1500, y:5100 },
+    { x:5100, y:4900 }, { x:4800, y:5100 },
+    { x:600, y:2000 }, { x:700, y:3000 }, { x:800, y:4000 },
+    { x:5200, y:2000 }, { x:5300, y:3000 }, { x:5100, y:4000 },
+  ];
+
+  for (let sp of spawnPoints) {
+    enemies.push(new Enemy(sp.x, sp.y, 'raider'));
+  }
+}
+
+// ==================== SIMULATED PLAYERS ====================
+function spawnSimPlayers() {
+  let names = ['Ace','Nova','Ghost','Raven','Bolt','Cipher','Hex','Viper','Echo','Flux','Pixel','Shade','Storm','Blaze','Drift'];
+  let spots = [
+    {x:2900,y:2900},{x:2000,y:2600},{x:3700,y:2600},{x:2800,y:1800},{x:2900,y:3800},
+    {x:1000,y:800},{x:5000,y:1200},{x:2100,y:2700},{x:3600,y:2700},{x:2700,y:3000},
+  ];
+  for (let i = 0; i < spots.length; i++) {
+    otherPlayers.push(new SimPlayer(spots[i].x, spots[i].y, names[i]));
+  }
+}
+
+// ==================== MAIN LOOP ====================
+function gameLoop() {
+  if (!gameActive) { requestAnimationFrame(gameLoop); return; }
+
+  frameCount++;
+
+  // Update
+  player.update();
+  for (let e of enemies) e.update();
+  for (let p of otherPlayers) p.update();
+
+  // Update particles
+  for (let p of particles) {
+    p.x += p.vx; p.y += p.vy; p.life--;
+    p.vx *= 0.95; p.vy *= 0.95;
+  }
+  particles = particles.filter(p => p.life > 0);
+
+  // Camera
+  camera.x = player.x - canvas.width/2;
+  camera.y = player.y - canvas.height/2;
+
+  checkDistrict();
+
+  // Race mode
+  if (raceActive) {
+    updateRace();
+    drawRace();
+    requestAnimationFrame(gameLoop);
+    return;
+  }
+
+  // Draw
+  drawWorld();
+
+  // Draw other players
+  for (let p of otherPlayers) p.draw();
+
+  // Draw enemies
+  for (let e of enemies) e.draw();
+
+  // Draw player
+  player.draw();
+
+  // Draw particles
+  for (let p of particles) {
+    let sx = p.x - camera.x, sy = p.y - camera.y;
+    let alpha = p.life / p.maxLife;
+    ctx.fillStyle = p.color.replace(')', `,${alpha})`).replace('rgb', 'rgba');
+    ctx.globalAlpha = alpha;
+    ctx.fillRect(sx, sy, p.size, p.size);
+    ctx.globalAlpha = 1;
+  }
+
+  checkNearbyLocations();
+
+  // Draw minimap
+  drawMinimap();
+
+  requestAnimationFrame(gameLoop);
+}
+
+// ==================== INPUT ====================
+document.addEventListener('keydown', e => {
+  keys[e.key.toLowerCase()] = true;
+
+  if (e.key.toLowerCase() === 'e') interact();
+  if (e.key.toLowerCase() === 'i') {
+    let inv = document.getElementById('inventory-panel');
+    inv.style.display = inv.style.display === 'none' ? 'block' : 'none';
+  }
+  if (e.key === 'Escape') {
+    closeShop(); closeJob(); closeRace();
+  }
+  if (e.key === ' ' && gameActive && player) {
+    e.preventDefault();
+    player.attack();
+  }
+});
+
+document.addEventListener('keyup', e => { keys[e.key.toLowerCase()] = false; });
+
+// ==================== ENTRY / RESPAWN ====================
+function enterCitadel() {
+  document.getElementById('entry-screen').style.display = 'none';
+  document.getElementById('hud').style.display = 'block';
+  document.getElementById('district-bar').style.display = 'block';
+  document.getElementById('minimap').style.display = 'block';
+  document.getElementById('controls-help').style.display = 'block';
+
+  player = new Player(2950, 2950);
+  player.chips = 1;
+  player.credits = 100;
+
+  spawnEnemies();
+  spawnSimPlayers();
+
+  gameActive = true;
+  updateHUD();
+  updateInventoryUI();
+  notify('Welcome to The Citadel! Visit the ID Registry in HQ to get your Floppy Disk ID.');
+}
+
+function respawn() {
+  document.getElementById('death-screen').style.display = 'none';
+  player.dead = false;
+  player.hp = player.maxHp;
+  player.x = 2950;
+  player.y = 2950;
+  player.chips = 1;
+  player.credits = 0;
+  player.inventory = [];
+  player.hasFloppyId = false;
+  player.job = null;
+  if (jobTimer) clearInterval(jobTimer);
+  updateHUD();
+  updateInventoryUI();
+  notify('Respawned at HQ. You lost everything. Get a new Floppy Disk ID to restart.');
+}
+
+// ==================== START ====================
+gameLoop();
+</script>
+</body>
+</html>
