@@ -1365,6 +1365,8 @@ function enterCitadel() {
   document.getElementById('controls-help').style.display = 'block';
 
   player = new Player(2950, 2950);
+  // spawn just south of the Command Center to avoid building collision
+  player.x = 2960; player.y = 3050;
   player.chips = 1;
   player.credits = 100;
 
@@ -1382,8 +1384,8 @@ function respawn() {
   document.getElementById('death-screen').style.display = 'none';
   player.dead = false;
   player.hp = player.maxHp;
-  player.x = 2950;
-  player.y = 2950;
+  player.x = 2960;
+  player.y = 3050;
   player.chips = 1;
   player.credits = 0;
   player.inventory = [];
