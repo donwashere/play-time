@@ -1005,21 +1005,20 @@ function drawRace() {
 
 // ==================== WORLD RENDERING ====================
 function drawWorld() {
-  // Space background
-  ctx.fillStyle = '#070710';
+  // Aged paper background
+  ctx.fillStyle = '#c9bfa3';
   ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-  // Stars
-  for (let s of stars) {
-    let sx = s.x - camera.x, sy = s.y - camera.y;
-    // Parallax
-    sx = ((s.x * 0.3) - camera.x * 0.3) % canvas.width;
-    sy = ((s.y * 0.3) - camera.y * 0.3) % canvas.height;
-    if (sx < 0) sx += canvas.width;
-    if (sy < 0) sy += canvas.height;
-    let bright = 0.3 + Math.sin(frameCount * 0.02 + s.b * 10) * 0.2;
-    ctx.fillStyle = `rgba(200,220,255,${bright})`;
-    ctx.fillRect(sx, sy, s.s, s.s);
+  // Paper grid
+  ctx.strokeStyle = 'rgba(26,24,23,0.08)';
+  ctx.lineWidth = 1;
+  let gridSize = 40;
+  let offX = -camera.x % gridSize, offY = -camera.y % gridSize;
+  for (let x = offX; x < canvas.width; x += gridSize) {
+    ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, canvas.height); ctx.stroke();
+  }
+  for (let y = offY; y < canvas.height; y += gridSize) {
+    ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(canvas.width, y); ctx.stroke();
   }
 
   // Draw districts
@@ -1028,27 +1027,21 @@ function drawWorld() {
     let sx = d.x - camera.x, sy = d.y - camera.y;
     if (sx+d.w < 0 || sx > canvas.width || sy+d.h < 0 || sy > canvas.height) continue;
 
-    ctx.fillStyle = d.color;
+    // Tinted paper region
+    ctx.fillStyle = d.safe ? 'rgba(60,120,60,0.18)' : `rgba(139,43,43,${0.15 + Math.sin(frameCount*0.01)*0.03})`;
     ctx.fillRect(sx, sy, d.w, d.h);
-    ctx.strokeStyle = d.border;
-    ctx.lineWidth = 2;
+    // Hand-drawn border (dashed)
+    ctx.strokeStyle = d.safe ? '#2d5a2d' : '#8b2b2b';
+    ctx.lineWidth = 3;
+    ctx.setLineDash([10, 5]);
     ctx.strokeRect(sx, sy, d.w, d.h);
+    ctx.setLineDash([]);
 
-    // District name
-    ctx.fillStyle = d.border;
-    ctx.font = '14px Courier New';
+    // District name in scribbled label
+    ctx.fillStyle = '#1a1817';
+    ctx.font = "bold 16px 'Special Elite', cursive";
     ctx.textAlign = 'center';
-    ctx.fillText(d.name, sx + d.w/2, sy + 20);
-
-    // Safe/danger indicator
-    if (d.safe) {
-      ctx.fillStyle = 'rgba(42,138,74,0.15)';
-      ctx.fillRect(sx, sy, d.w, d.h);
-    } else {
-      // Danger zone ambient
-      ctx.fillStyle = `rgba(90,26,26,${0.05 + Math.sin(frameCount*0.01)*0.03})`;
-      ctx.fillRect(sx, sy, d.w, d.h);
-    }
+    ctx.fillText(d.name.toUpperCase(), sx + d.w/2, sy + 24);
   }
 
   // Draw asteroid textures in badlands
@@ -1067,10 +1060,10 @@ function drawWorld() {
     if (!inBadlands) continue;
 
     let r = 8 + (i % 15);
-    ctx.fillStyle = `rgba(60,40,30,${0.4+Math.sin(i)*0.2})`;
+    ctx.fillStyle = `rgba(90,70,50,${0.5+Math.sin(i)*0.2})`;
     ctx.beginPath(); ctx.arc(sx, sy, r, 0, Math.PI*2); ctx.fill();
-    ctx.fillStyle = 'rgba(80,60,40,0.3)';
-    ctx.beginPath(); ctx.arc(sx-2, sy-2, r*0.6, 0, Math.PI*2); ctx.fill();
+    ctx.strokeStyle = '#1a1817'; ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.arc(sx, sy, r, 0, Math.PI*2); ctx.stroke();
   }
 
   // Draw locations/buildings
@@ -1091,18 +1084,13 @@ function drawWorld() {
       ctx.font = '9px Courier New'; ctx.textAlign = 'center';
       ctx.fillText(loc.resource, sx+30, sy-5);
     } else {
-      // Building
-      let bColor = loc.type === 'shop' ? '#2a3a2a' :
-                   loc.type === 'job_board' ? '#2a2a3a' :
-                   loc.type === 'factory' ? '#3a2a1a' :
-                   loc.type === 'dock' ? '#1a2a3a' :
-                   loc.type === 'race' ? '#3a2a3a' :
-                   loc.type === 'id_office' ? '#2a3a3a' :
-                   '#2a2a2a';
-      ctx.fillStyle = bColor;
+      // Building card (paper)
+      ctx.fillStyle = 'rgba(0,0,0,0.25)';
+      ctx.fillRect(sx+4, sy+4, loc.w, loc.h); // shadow
+      ctx.fillStyle = '#e6ddc5';
       ctx.fillRect(sx, sy, loc.w, loc.h);
-      ctx.strokeStyle = '#4a5a6a';
-      ctx.lineWidth = 1;
+      ctx.strokeStyle = '#1a1817';
+      ctx.lineWidth = 2.5;
       ctx.strokeRect(sx, sy, loc.w, loc.h);
 
       // Icon
@@ -1114,10 +1102,10 @@ function drawWorld() {
                  loc.type === 'id_office' ? '💾' :
                  loc.type === 'spawn' ? '🏛' : '🏠';
 
-      ctx.font = '18px serif'; ctx.textAlign = 'center';
-      ctx.fillText(icon, sx+loc.w/2, sy+loc.h/2+6);
-      ctx.fillStyle = '#8a9aaa'; ctx.font = '9px Courier New';
-      ctx.fillText(loc.name, sx+loc.w/2, sy-4);
+      ctx.font = '24px serif'; ctx.textAlign = 'center';
+      ctx.fillText(icon, sx+loc.w/2, sy+loc.h/2+8);
+      ctx.fillStyle = '#1a1817'; ctx.font = "bold 11px 'Special Elite', cursive";
+      ctx.fillText(loc.name, sx+loc.w/2, sy-6);
     }
   }
 }
