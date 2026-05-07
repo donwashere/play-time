@@ -592,15 +592,18 @@ class Enemy {
 
 // ==================== OTHER PLAYERS (simulated for now) ====================
 class SimPlayer {
-  constructor(x, y, name) {
+  constructor(x, y, name, isReal=false) {
     this.x = x; this.y = y;
     this.name = name;
     this.angle = Math.random()*Math.PI*2;
     this.speed = 1+Math.random()*2;
     this.target = { x: x+(Math.random()-0.5)*600, y: y+(Math.random()-0.5)*600 };
     this.hp = 100; this.maxHp = 100;
+    this.isReal = isReal;
+    this.lastSeen = Date.now();
   }
   update() {
+    if (this.isReal) return; // remote players are updated via realtime payloads
     let dx = this.target.x-this.x, dy = this.target.y-this.y;
     let d = Math.sqrt(dx*dx+dy*dy);
     if (d < 30) {
@@ -616,11 +619,11 @@ class SimPlayer {
     let sx = this.x-camera.x, sy = this.y-camera.y;
     if (sx<-50||sx>canvas.width+50||sy<-50||sy>canvas.height+50) return;
     ctx.save(); ctx.translate(sx,sy); ctx.rotate(this.angle);
-    ctx.fillStyle = '#44aa66';
+    ctx.fillStyle = this.isReal ? '#4a9fff' : '#44aa66';
     ctx.beginPath(); ctx.moveTo(14,0); ctx.lineTo(-8,-8); ctx.lineTo(-4,0); ctx.lineTo(-8,8); ctx.closePath(); ctx.fill();
     ctx.restore();
-    ctx.fillStyle = '#66cc88'; ctx.font='9px Courier New'; ctx.textAlign='center';
-    ctx.fillText(this.name, sx, sy-18);
+    ctx.fillStyle = this.isReal ? '#8ac4ff' : '#66cc88'; ctx.font='9px Courier New'; ctx.textAlign='center';
+    ctx.fillText((this.isReal?'◆ ':'')+this.name, sx, sy-18);
   }
 }
 
