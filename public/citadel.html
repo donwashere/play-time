@@ -1396,6 +1396,78 @@ function respawn() {
 
 // ==================== START ====================
 gameLoop();
+
+// ==================== MULTIPLAYER (Supabase Realtime) ====================
+const SUPA_URL = 'https://ylttxtggbojyuhmyfujj.supabase.co';
+const SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InlsdHR4dGdnYm9qeXVobXlmdWpqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzI3NTQ1NTYsImV4cCI6MjA4ODMzMDU1Nn0.JxUC0gGSXqHFsY8a8kUW8tipgDKTj6tRTDWjxiUAd6g';
+let mpClient = null, mpChannel = null, mpId = null, mpName = null;
+const REMOTE_NAMES = ['Pilot','Drifter','Scout','Wanderer','Renegade','Rogue','Vector','Comet','Quasar','Orbit','Halo','Nebula','Falcon','Phantom','Specter'];
+
+function initMultiplayer() {
+  if (mpChannel || !window.supabase) return;
+  mpId = 'p_' + Math.random().toString(36).slice(2,10);
+  mpName = REMOTE_NAMES[Math.floor(Math.random()*REMOTE_NAMES.length)] + '-' + Math.floor(Math.random()*999);
+  mpClient = window.supabase.createClient(SUPA_URL, SUPA_KEY, { auth: { persistSession:false } });
+  mpChannel = mpClient.channel('citadel-world', { config: { presence: { key: mpId } } });
+
+  mpChannel.on('presence', { event: 'sync' }, () => {
+    const state = mpChannel.presenceState();
+    const liveIds = new Set();
+    for (const k of Object.keys(state)) {
+      if (k === mpId) continue;
+      const meta = state[k][0];
+      if (!meta) continue;
+      liveIds.add(k);
+      let rp = otherPlayers.find(p => p.id === k);
+      if (!rp) {
+        rp = new SimPlayer(meta.x||2950, meta.y||2950, meta.name||'Pilot', true);
+        rp.id = k;
+        otherPlayers.push(rp);
+      }
+    }
+    // remove disconnected real players
+    otherPlayers = otherPlayers.filter(p => !p.isReal || liveIds.has(p.id));
+    updateOnlineCount();
+  });
+
+  mpChannel.on('broadcast', { event: 'pos' }, ({ payload }) => {
+    if (!payload || payload.id === mpId) return;
+    let rp = otherPlayers.find(p => p.id === payload.id);
+    if (!rp) {
+      rp = new SimPlayer(payload.x, payload.y, payload.name||'Pilot', true);
+      rp.id = payload.id;
+      otherPlayers.push(rp);
+    }
+    rp.x = payload.x; rp.y = payload.y;
+    rp.angle = payload.a || 0;
+    rp.hp = payload.hp ?? rp.hp;
+    rp.lastSeen = Date.now();
+  });
+
+  mpChannel.subscribe(async (status) => {
+    if (status === 'SUBSCRIBED') {
+      await mpChannel.track({ name: mpName, x: player.x, y: player.y });
+      startPositionBroadcast();
+      notify('Connected to multiplayer as ' + mpName);
+    }
+  });
+}
+
+function startPositionBroadcast() {
+  setInterval(() => {
+    if (!mpChannel || !player || player.dead) return;
+    mpChannel.send({
+      type: 'broadcast', event: 'pos',
+      payload: { id: mpId, name: mpName, x: player.x, y: player.y, a: player.angle, hp: player.hp }
+    });
+  }, 100);
+}
+
+function updateOnlineCount() {
+  const el = document.getElementById('mp-count');
+  if (el) el.textContent = otherPlayers.filter(p => p.isReal).length + 1;
+}
+setInterval(updateOnlineCount, 1000);
 </script>
 </body>
 </html>
