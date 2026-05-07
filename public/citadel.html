@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>The Citadel (Homeworld)</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <style>
 * { margin:0; padding:0; box-sizing:border-box; }
 body { background:#0a0a12; overflow:hidden; font-family:'Courier New',monospace; color:#e0e0e0; }
@@ -116,6 +117,7 @@ canvas { display:block; }
   <div class="stat"><span class="label">HP:</span> <span class="value" id="hud-hp">100/100</span></div>
   <div class="stat"><span class="label">Job:</span> <span class="value" id="hud-job">None</span></div>
   <div class="stat"><span class="label">Floppy ID:</span> <span class="value" id="hud-floppy">❌</span></div>
+  <div class="stat"><span class="label">🌐 Online:</span> <span class="value" id="mp-count">1</span></div>
 </div>
 
 <div id="district-bar"></div>
@@ -591,15 +593,18 @@ class Enemy {
 
 // ==================== OTHER PLAYERS (simulated for now) ====================
 class SimPlayer {
-  constructor(x, y, name) {
+  constructor(x, y, name, isReal=false) {
     this.x = x; this.y = y;
     this.name = name;
     this.angle = Math.random()*Math.PI*2;
     this.speed = 1+Math.random()*2;
     this.target = { x: x+(Math.random()-0.5)*600, y: y+(Math.random()-0.5)*600 };
     this.hp = 100; this.maxHp = 100;
+    this.isReal = isReal;
+    this.lastSeen = Date.now();
   }
   update() {
+    if (this.isReal) return; // remote players are updated via realtime payloads
     let dx = this.target.x-this.x, dy = this.target.y-this.y;
     let d = Math.sqrt(dx*dx+dy*dy);
     if (d < 30) {
@@ -615,11 +620,11 @@ class SimPlayer {
     let sx = this.x-camera.x, sy = this.y-camera.y;
     if (sx<-50||sx>canvas.width+50||sy<-50||sy>canvas.height+50) return;
     ctx.save(); ctx.translate(sx,sy); ctx.rotate(this.angle);
-    ctx.fillStyle = '#44aa66';
+    ctx.fillStyle = this.isReal ? '#4a9fff' : '#44aa66';
     ctx.beginPath(); ctx.moveTo(14,0); ctx.lineTo(-8,-8); ctx.lineTo(-4,0); ctx.lineTo(-8,8); ctx.closePath(); ctx.fill();
     ctx.restore();
-    ctx.fillStyle = '#66cc88'; ctx.font='9px Courier New'; ctx.textAlign='center';
-    ctx.fillText(this.name, sx, sy-18);
+    ctx.fillStyle = this.isReal ? '#8ac4ff' : '#66cc88'; ctx.font='9px Courier New'; ctx.textAlign='center';
+    ctx.fillText((this.isReal?'◆ ':'')+this.name, sx, sy-18);
   }
 }
 
@@ -1365,6 +1370,7 @@ function enterCitadel() {
 
   spawnEnemies();
   spawnSimPlayers();
+  initMultiplayer();
 
   gameActive = true;
   updateHUD();
@@ -1391,6 +1397,78 @@ function respawn() {
 
 // ==================== START ====================
 gameLoop();
+
+// ==================== MULTIPLAYER (Supabase Realtime) ====================
+const SUPA_URL = 'https://ylttxtggbojyuhmyfujj.supabase.co';
+const SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InlsdHR4dGdnYm9qeXVobXlmdWpqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzI3NTQ1NTYsImV4cCI6MjA4ODMzMDU1Nn0.JxUC0gGSXqHFsY8a8kUW8tipgDKTj6tRTDWjxiUAd6g';
+let mpClient = null, mpChannel = null, mpId = null, mpName = null;
+const REMOTE_NAMES = ['Pilot','Drifter','Scout','Wanderer','Renegade','Rogue','Vector','Comet','Quasar','Orbit','Halo','Nebula','Falcon','Phantom','Specter'];
+
+function initMultiplayer() {
+  if (mpChannel || !window.supabase) return;
+  mpId = 'p_' + Math.random().toString(36).slice(2,10);
+  mpName = REMOTE_NAMES[Math.floor(Math.random()*REMOTE_NAMES.length)] + '-' + Math.floor(Math.random()*999);
+  mpClient = window.supabase.createClient(SUPA_URL, SUPA_KEY, { auth: { persistSession:false } });
+  mpChannel = mpClient.channel('citadel-world', { config: { presence: { key: mpId } } });
+
+  mpChannel.on('presence', { event: 'sync' }, () => {
+    const state = mpChannel.presenceState();
+    const liveIds = new Set();
+    for (const k of Object.keys(state)) {
+      if (k === mpId) continue;
+      const meta = state[k][0];
+      if (!meta) continue;
+      liveIds.add(k);
+      let rp = otherPlayers.find(p => p.id === k);
+      if (!rp) {
+        rp = new SimPlayer(meta.x||2950, meta.y||2950, meta.name||'Pilot', true);
+        rp.id = k;
+        otherPlayers.push(rp);
+      }
+    }
+    // remove disconnected real players
+    otherPlayers = otherPlayers.filter(p => !p.isReal || liveIds.has(p.id));
+    updateOnlineCount();
+  });
+
+  mpChannel.on('broadcast', { event: 'pos' }, ({ payload }) => {
+    if (!payload || payload.id === mpId) return;
+    let rp = otherPlayers.find(p => p.id === payload.id);
+    if (!rp) {
+      rp = new SimPlayer(payload.x, payload.y, payload.name||'Pilot', true);
+      rp.id = payload.id;
+      otherPlayers.push(rp);
+    }
+    rp.x = payload.x; rp.y = payload.y;
+    rp.angle = payload.a || 0;
+    rp.hp = payload.hp ?? rp.hp;
+    rp.lastSeen = Date.now();
+  });
+
+  mpChannel.subscribe(async (status) => {
+    if (status === 'SUBSCRIBED') {
+      await mpChannel.track({ name: mpName, x: player.x, y: player.y });
+      startPositionBroadcast();
+      notify('Connected to multiplayer as ' + mpName);
+    }
+  });
+}
+
+function startPositionBroadcast() {
+  setInterval(() => {
+    if (!mpChannel || !player || player.dead) return;
+    mpChannel.send({
+      type: 'broadcast', event: 'pos',
+      payload: { id: mpId, name: mpName, x: player.x, y: player.y, a: player.angle, hp: player.hp }
+    });
+  }, 100);
+}
+
+function updateOnlineCount() {
+  const el = document.getElementById('mp-count');
+  if (el) el.textContent = otherPlayers.filter(p => p.isReal).length + 1;
+}
+setInterval(updateOnlineCount, 1000);
 </script>
 </body>
 </html>
