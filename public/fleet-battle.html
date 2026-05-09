@@ -239,6 +239,12 @@
                 </div>
                 <div class="flex-1">
                     <div class="text-iron text-sm mb-2 border-none">Fleet Composition (<span id="fleet-points">0</span>/200 Pts)</div>
+                    <div class="flex flex-wrap gap-1 mb-2">
+                        <button class="btn px-2 py-1 text-xs" style="background:#c9b87a;" onclick="loadFleetPreset('skirmish')" title="Fast, mobile harassers">Skirmish</button>
+                        <button class="btn px-2 py-1 text-xs" style="background:#c98a6a;" onclick="loadFleetPreset('assault')" title="Heavy hitters & alpha strike">Assault</button>
+                        <button class="btn px-2 py-1 text-xs" style="background:#7aa3c9;" onclick="loadFleetPreset('defense')" title="Tanks & support healers">Defense</button>
+                        <button class="btn px-2 py-1 text-xs" style="background:#a89a7a;" onclick="loadFleetPreset('balanced')" title="All-rounder mix">Balanced</button>
+                    </div>
                     <div id="fleet-builder" class="space-y-1 h-48 overflow-y-auto pr-2">
                         <!-- Populated by JS -->
                     </div>
