@@ -887,10 +887,7 @@ function renderFleetBuilder() {
     if (btnLaunch) btnLaunch.disabled = totalPts > 200 || totalPts === 0 || totalShips > MAX_FLEET_PER_SIDE;
 }
 function updateFleetBuild(cls, delta) {
-    if (!profileData.fleetBuild[cls]) profileData.fleetBuild[cls] = 0;
-    profileData.fleetBuild[cls] = Math.max(0, profileData.fleetBuild[cls] + delta);
-}
-function _origUpdateFleetBuild() {} // marker (no-op)
+
     if (!profileData.fleetBuild[cls]) profileData.fleetBuild[cls] = 0;
     profileData.fleetBuild[cls] = Math.max(0, profileData.fleetBuild[cls] + delta);
     
