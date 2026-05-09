@@ -889,6 +889,10 @@ function renderFleetBuilder() {
 function updateFleetBuild(cls, delta) {
     if (!profileData.fleetBuild[cls]) profileData.fleetBuild[cls] = 0;
     profileData.fleetBuild[cls] = Math.max(0, profileData.fleetBuild[cls] + delta);
+}
+function _origUpdateFleetBuild() {} // marker (no-op)
+    if (!profileData.fleetBuild[cls]) profileData.fleetBuild[cls] = 0;
+    profileData.fleetBuild[cls] = Math.max(0, profileData.fleetBuild[cls] + delta);
     
     // Enforce fleet cap
     let totalShips = 0;
