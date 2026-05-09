@@ -902,6 +902,22 @@ function updateFleetBuild(cls, delta) {
     
     renderFleetBuilder();
 }
+const FLEET_PRESETS = {
+    skirmish: { name: 'Skirmish', build: { Scout: 4, Corvette: 4, Frigate: 3, Interceptor: 2 } },
+    assault:  { name: 'Assault',  build: { Battleship: 1, Bomber: 2, Destroyer: 2, Interceptor: 1 } },
+    defense:  { name: 'Defense',  build: { Shield: 2, Support: 2, Destroyer: 2, Frigate: 1 } },
+    balanced: { name: 'Balanced', build: { Frigate: 3, Corvette: 2, Destroyer: 2, Support: 1, Interceptor: 1, Scout: 1, Bomber: 1 } }
+};
+function loadFleetPreset(key) {
+    let p = FLEET_PRESETS[key];
+    if (!p) return;
+    let next = {};
+    for (let cls in SHIP_CLASSES) next[cls] = 0;
+    for (let cls in p.build) next[cls] = p.build[cls];
+    profileData.fleetBuild = next;
+    showNotification(p.name + ' preset loaded');
+    renderFleetBuilder();
+}
 function saveCustomization() { 
     /* unchanged */
     let cName = document.getElementById('cust-name'); if(cName) profileData.fleetName = cName.value; 
