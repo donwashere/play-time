@@ -903,6 +903,7 @@ function updateFleetBuild(cls, delta) {
     renderFleetBuilder();
 }
 function saveCustomization() { 
+    /* unchanged */
     let cName = document.getElementById('cust-name'); if(cName) profileData.fleetName = cName.value; 
     let cColor = document.getElementById('cust-color'); if(cColor) profileData.colorAccent = cColor.value; 
     let cCmd = document.getElementById('cust-commander'); if(cCmd) profileData.commanderTree = cCmd.value; 
