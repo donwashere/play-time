@@ -172,7 +172,7 @@
                 <button class="btn py-3" onclick="switchMenu('skirmish')">Skirmish Mode</button>
                 <button class="btn py-3" onclick="switchMenu('customize')">Fleet Dockyard</button>
                 <button class="btn py-3" onclick="switchMenu('profile')">Service Record</button>
-                <button class="btn py-3" style="background:#7a5a3a;color:#fff;" onclick="window.open('/citadel.html','_blank')">🌐 The Citadel (MMO)</button>
+                <button class="btn py-3" style="background:#8a8a8a;color:#fff;cursor:not-allowed;opacity:0.85;" disabled title="The Citadel multiplayer hub is under construction.">🌐 The Citadel (MMO) — Coming Soon</button>
                 <button class="btn py-3" onclick="switchMenu('settings')">Settings</button>
             </div>
         </div>
@@ -289,8 +289,7 @@
                 <div style="position:absolute; top:0; left:0; width:100%; height:100%; background: repeating-linear-gradient(0deg, transparent, transparent 28px, rgba(100,140,200,0.12) 28px, rgba(100,140,200,0.12) 29px); pointer-events:none;"></div>
                 <!-- Red margin line -->
                 <div style="position:absolute; top:0; left:50px; width:2px; height:100%; background:rgba(200,80,80,0.25); pointer-events:none;"></div>
-                <!-- Scribbled football tactic canvas -->
-                <canvas id="doctrine-canvas" width="540" height="280" style="position:absolute; top:0; left:0; width:100%; height:280px; opacity:0.35; pointer-events:none;"></canvas>
+                <!-- (Tactic background removed) -->
                 <div class="text-center text-xs font-bold mb-3" style="color:#8b2b2b; letter-spacing:3px; position:relative; z-index:1; text-decoration:underline; text-underline-offset:4px;">PRE-BATTLE BEHAVIOR SCRIPT</div>
                 <div class="grid grid-cols-2 gap-3" id="doctrine-cards" style="position:relative; z-index:1;">
                     <!-- Populated by JS -->
@@ -448,7 +447,11 @@ const SHIP_CLASSES = {
     'Siege': { cost: 40, hp: 275, speed: 2.5, maxForce: 0.1, range: 550, dmg: 50, fireRate: 100, role: 'Aggressor', desc: 'Slow, long range, high dmg.' },
     'Support': { cost: 30, hp: 155, speed: 3.5, maxForce: 0.2, range: 200, dmg: 5, fireRate: 60, role: 'Guardian', heal: true, desc: 'Repairs nearby allies.' },
     'Interceptor': { cost: 20, hp: 134, speed: 6.5, maxForce: 0.4, range: 200, dmg: 12, fireRate: 20, role: 'Hunter', desc: 'Hunts weak targets.' },
-    'Shield': { cost: 35, hp: 300, speed: 2.8, maxForce: 0.15, range: 150, dmg: 4, fireRate: 80, role: 'Guardian', desc: 'Frontal barrier, absorbs damage for allies.', isShield: true }
+    'Shield': { cost: 35, hp: 300, speed: 2.8, maxForce: 0.15, range: 150, dmg: 4, fireRate: 80, role: 'Guardian', desc: 'Frontal barrier, absorbs damage for allies.', isShield: true },
+    'Scout': { cost: 10, hp: 70, speed: 7.5, maxForce: 0.5, range: 220, dmg: 6, fireRate: 25, role: 'Hunter', desc: 'Cheap recon. Extends vision, harasses lone targets.' },
+    'Bomber': { cost: 35, hp: 160, speed: 4.5, maxForce: 0.25, range: 280, dmg: 35, fireRate: 80, role: 'Aggressor', desc: 'Heavy ordnance. Slow rate, big punch on key targets.' },
+    'Battleship': { cost: 55, hp: 420, speed: 2.8, maxForce: 0.12, range: 420, dmg: 28, fireRate: 55, role: 'Aggressor', desc: 'Capital hull. Tough centerpiece for the line.' },
+    'Corvette': { cost: 18, hp: 130, speed: 6.0, maxForce: 0.35, range: 230, dmg: 11, fireRate: 30, role: 'Flanker', desc: 'Balanced light hull. Reliable workhorse.' }
 };
 
 const CONDITIONS = [
@@ -496,7 +499,7 @@ const FLEET_COMMANDS = [
 ];
 
 // --- FLEET CAP ---
-const MAX_FLEET_PER_SIDE = 25;
+const MAX_FLEET_PER_SIDE = 32;
 
 // --- DISCIPLINE MODES ---
 const DISCIPLINE_MODES = {
@@ -529,7 +532,7 @@ let profileData = {
     fleetName: 'ALLIED STEAM CARRIER', colorAccent: '#008080',
     commanderTree: 'Tactical', layout: 'default', theme: 'retro',
     achievements: { timeWin: false, noLoss: false, lowHpWin: false },
-    fleetBuild: { 'Frigate': 4, 'Destroyer': 2, 'Siege': 1, 'Support': 1, 'Interceptor': 2, 'Shield': 1 },
+    fleetBuild: { 'Frigate': 4, 'Destroyer': 2, 'Siege': 1, 'Support': 1, 'Interceptor': 2, 'Shield': 1, 'Scout': 2, 'Bomber': 1, 'Battleship': 1, 'Corvette': 2 },
     doctrine: 'none'
 };
 
@@ -3253,7 +3256,13 @@ function useAbility(slot) {
     }
 }
 
-function createExplosion(x, y, color, amount, size) { for (let i = 0; i < amount; i++) particles.push(new Particle(x, y, color, randomRange(2, 10), randomRange(15, 40), randomRange(2, size))); }
+function createExplosion(x, y, color, amount, size) {
+    // Throttle particle counts when many already exist to keep the framerate smooth
+    if (particles.length > 600) return;
+    let scale = particles.length > 350 ? 0.5 : 1;
+    let n = Math.max(1, Math.floor(amount * scale));
+    for (let i = 0; i < n; i++) particles.push(new Particle(x, y, color, randomRange(2, 10), randomRange(15, 40), randomRange(2, size)));
+}
 
 function applySelection() {
     let minX = Math.min(selectionBox.startX, mouse.worldX); let maxX = Math.max(selectionBox.startX, mouse.worldX);
