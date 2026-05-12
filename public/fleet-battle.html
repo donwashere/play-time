@@ -244,6 +244,8 @@
                         <button class="btn px-2 py-1 text-xs" style="background:#c98a6a;" onclick="loadFleetPreset('assault')" title="Heavy hitters & alpha strike">Assault</button>
                         <button class="btn px-2 py-1 text-xs" style="background:#7aa3c9;" onclick="loadFleetPreset('defense')" title="Tanks & support healers">Defense</button>
                         <button class="btn px-2 py-1 text-xs" style="background:#a89a7a;" onclick="loadFleetPreset('balanced')" title="All-rounder mix">Balanced</button>
+                        <button class="btn px-2 py-1 text-xs" style="background:#6b8e3d; color:#fff;" onclick="autoBalanceFleet()" title="Fill remaining budget with ships that keep DPS-per-point near the meta target. Keeps ships you've already added.">⚖ Auto-Balance</button>
+                        <button class="btn px-2 py-1 text-xs" style="background:#8b2b2b; color:#fff;" onclick="clearFleetBuild()" title="Remove all ships">Clear</button>
                     </div>
                     <div id="fleet-builder" class="space-y-1 h-48 overflow-y-auto pr-2">
                         <!-- Populated by JS -->
@@ -538,7 +540,7 @@ let profileData = {
     fleetName: 'ALLIED STEAM CARRIER', colorAccent: '#008080',
     commanderTree: 'Tactical', layout: 'default', theme: 'retro',
     achievements: { timeWin: false, noLoss: false, lowHpWin: false },
-    fleetBuild: { 'Frigate': 4, 'Destroyer': 2, 'Siege': 1, 'Support': 1, 'Interceptor': 2, 'Shield': 1, 'Scout': 2, 'Bomber': 1, 'Battleship': 1, 'Corvette': 2 },
+    fleetBuild: { 'Frigate': 3, 'Destroyer': 1, 'Siege': 0, 'Support': 1, 'Interceptor': 2, 'Shield': 0, 'Scout': 2, 'Bomber': 0, 'Battleship': 0, 'Corvette': 2 },
     doctrine: 'none'
 };
 
