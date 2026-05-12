@@ -920,6 +920,65 @@ function loadFleetPreset(key) {
     showNotification(p.name + ' preset loaded');
     renderFleetBuilder();
 }
+function clearFleetBuild() {
+    let next = {};
+    for (let cls in SHIP_CLASSES) next[cls] = 0;
+    profileData.fleetBuild = next;
+    renderFleetBuilder();
+}
+// Auto-balance: fill remaining points/ship-cap with picks that keep
+// fleet DPS-per-point close to a fair meta target (~0.85). Preserves
+// any ships the player has already added.
+function autoBalanceFleet() {
+    const BUDGET = 200;
+    const CAP = MAX_FLEET_PER_SIDE;
+    const TARGET_DPP = 0.85;
+    let build = {};
+    for (let cls in SHIP_CLASSES) build[cls] = profileData.fleetBuild[cls] || 0;
+
+    const usedPts = () => Object.keys(build).reduce((a,c)=>a+build[c]*SHIP_CLASSES[c].cost,0);
+    const usedShips = () => Object.values(build).reduce((a,b)=>a+b,0);
+    const fleetDpp = () => {
+        let dmg=0,cost=0;
+        for (let c in build) {
+            const s = SHIP_CLASSES[c];
+            dmg += build[c] * (s.dmg * 60 / s.fireRate);
+            cost += build[c] * s.cost;
+        }
+        return cost ? dmg/cost : 0;
+    };
+
+    if (usedPts() > BUDGET || usedShips() > CAP) {
+        showNotification('Already over budget/cap — clear or trim first');
+        return;
+    }
+
+    let guard = 300;
+    while (guard-- > 0) {
+        const remaining = BUDGET - usedPts();
+        const slots = CAP - usedShips();
+        if (slots <= 0) break;
+        let best = null, bestScore = -Infinity;
+        for (let cls in SHIP_CLASSES) {
+            const s = SHIP_CLASSES[cls];
+            if (s.cost > remaining) continue;
+            build[cls]++;
+            const dist = Math.abs(fleetDpp() - TARGET_DPP);
+            // Reward variety slightly so we don't spam one class
+            const variety = build[cls] === 1 ? 0.04 : 0;
+            // Reward filling more of the budget (avoid stalling early)
+            const fill = (s.cost / BUDGET) * 0.05;
+            build[cls]--;
+            const score = -dist + variety + fill;
+            if (score > bestScore) { bestScore = score; best = cls; }
+        }
+        if (!best) break;
+        build[best]++;
+    }
+    profileData.fleetBuild = build;
+    showNotification('Auto-balanced: ' + usedPts() + ' pts / ' + usedShips() + ' ships (DPP ' + fleetDpp().toFixed(2) + ')');
+    renderFleetBuilder();
+}
 function saveCustomization() { 
     /* unchanged */
     let cName = document.getElementById('cust-name'); if(cName) profileData.fleetName = cName.value; 
