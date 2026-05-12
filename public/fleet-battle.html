@@ -244,6 +244,8 @@
                         <button class="btn px-2 py-1 text-xs" style="background:#c98a6a;" onclick="loadFleetPreset('assault')" title="Heavy hitters & alpha strike">Assault</button>
                         <button class="btn px-2 py-1 text-xs" style="background:#7aa3c9;" onclick="loadFleetPreset('defense')" title="Tanks & support healers">Defense</button>
                         <button class="btn px-2 py-1 text-xs" style="background:#a89a7a;" onclick="loadFleetPreset('balanced')" title="All-rounder mix">Balanced</button>
+                        <button class="btn px-2 py-1 text-xs" style="background:#6b8e3d; color:#fff;" onclick="autoBalanceFleet()" title="Fill remaining budget with ships that keep DPS-per-point near the meta target. Keeps ships you've already added.">⚖ Auto-Balance</button>
+                        <button class="btn px-2 py-1 text-xs" style="background:#8b2b2b; color:#fff;" onclick="clearFleetBuild()" title="Remove all ships">Clear</button>
                     </div>
                     <div id="fleet-builder" class="space-y-1 h-48 overflow-y-auto pr-2">
                         <!-- Populated by JS -->
@@ -538,7 +540,7 @@ let profileData = {
     fleetName: 'ALLIED STEAM CARRIER', colorAccent: '#008080',
     commanderTree: 'Tactical', layout: 'default', theme: 'retro',
     achievements: { timeWin: false, noLoss: false, lowHpWin: false },
-    fleetBuild: { 'Frigate': 4, 'Destroyer': 2, 'Siege': 1, 'Support': 1, 'Interceptor': 2, 'Shield': 1, 'Scout': 2, 'Bomber': 1, 'Battleship': 1, 'Corvette': 2 },
+    fleetBuild: { 'Frigate': 3, 'Destroyer': 1, 'Siege': 0, 'Support': 1, 'Interceptor': 2, 'Shield': 0, 'Scout': 2, 'Bomber': 0, 'Battleship': 0, 'Corvette': 2 },
     doctrine: 'none'
 };
 
@@ -916,6 +918,65 @@ function loadFleetPreset(key) {
     for (let cls in p.build) next[cls] = p.build[cls];
     profileData.fleetBuild = next;
     showNotification(p.name + ' preset loaded');
+    renderFleetBuilder();
+}
+function clearFleetBuild() {
+    let next = {};
+    for (let cls in SHIP_CLASSES) next[cls] = 0;
+    profileData.fleetBuild = next;
+    renderFleetBuilder();
+}
+// Auto-balance: fill remaining points/ship-cap with picks that keep
+// fleet DPS-per-point close to a fair meta target (~0.85). Preserves
+// any ships the player has already added.
+function autoBalanceFleet() {
+    const BUDGET = 200;
+    const CAP = MAX_FLEET_PER_SIDE;
+    const TARGET_DPP = 0.85;
+    let build = {};
+    for (let cls in SHIP_CLASSES) build[cls] = profileData.fleetBuild[cls] || 0;
+
+    const usedPts = () => Object.keys(build).reduce((a,c)=>a+build[c]*SHIP_CLASSES[c].cost,0);
+    const usedShips = () => Object.values(build).reduce((a,b)=>a+b,0);
+    const fleetDpp = () => {
+        let dmg=0,cost=0;
+        for (let c in build) {
+            const s = SHIP_CLASSES[c];
+            dmg += build[c] * (s.dmg * 60 / s.fireRate);
+            cost += build[c] * s.cost;
+        }
+        return cost ? dmg/cost : 0;
+    };
+
+    if (usedPts() > BUDGET || usedShips() > CAP) {
+        showNotification('Already over budget/cap — clear or trim first');
+        return;
+    }
+
+    let guard = 300;
+    while (guard-- > 0) {
+        const remaining = BUDGET - usedPts();
+        const slots = CAP - usedShips();
+        if (slots <= 0) break;
+        let best = null, bestScore = -Infinity;
+        for (let cls in SHIP_CLASSES) {
+            const s = SHIP_CLASSES[cls];
+            if (s.cost > remaining) continue;
+            build[cls]++;
+            const dist = Math.abs(fleetDpp() - TARGET_DPP);
+            // Reward variety slightly so we don't spam one class
+            const variety = build[cls] === 1 ? 0.04 : 0;
+            // Reward filling more of the budget (avoid stalling early)
+            const fill = (s.cost / BUDGET) * 0.05;
+            build[cls]--;
+            const score = -dist + variety + fill;
+            if (score > bestScore) { bestScore = score; best = cls; }
+        }
+        if (!best) break;
+        build[best]++;
+    }
+    profileData.fleetBuild = build;
+    showNotification('Auto-balanced: ' + usedPts() + ' pts / ' + usedShips() + ' ships (DPP ' + fleetDpp().toFixed(2) + ')');
     renderFleetBuilder();
 }
 function saveCustomization() { 
